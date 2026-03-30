@@ -84,6 +84,7 @@ class YouTubeMonitor:
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            start_ts = time.time()
             # Check stderr for explicit rate-limit message and set cooldown
             stderr = (result.stderr or "")
             if "rate-limited" in stderr or "rate limited" in stderr or "The current session has been rate-limited" in stderr:
@@ -91,6 +92,7 @@ class YouTubeMonitor:
                 self._set_rate_limit_cooldown(60 * 60)
                 log.warning("[Monitor] detected yt-dlp rate-limit when scanning %s — entering cooldown", url)
             videos = []
+            metadata_calls = 0
             # Collect non-empty lines from flat-playlist output
             lines = [l for l in result.stdout.splitlines() if l.strip()]
             # Limit number of metadata fetches per channel to avoid bursts
@@ -101,6 +103,7 @@ class YouTubeMonitor:
                 except Exception:
                     continue
                 # Always fetch full metadata for each video
+                metadata_calls += 1
                 meta = self._get_metadata(data.get("url") or data.get("id", ""))
                 if not meta:
                     continue
@@ -112,6 +115,8 @@ class YouTubeMonitor:
                     time.sleep(s)
                 except Exception:
                     pass
+            elapsed = time.time() - start_ts
+            log.info("[Monitor] scanned %s: %d candidates, %d metadata calls, elapsed=%.1fs", url, len(videos), metadata_calls, elapsed)
             return videos
         except subprocess.TimeoutExpired:
             log.warning("[Monitor] yt-dlp timeout for %s", url)
