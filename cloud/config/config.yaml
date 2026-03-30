@@ -32,7 +32,7 @@ channels:
 youtube:
   cookies_file: "config/cookies.txt"
   proxy: ""
-  concurrent_channels: 3
+  concurrent_channels: 8
   debug_downloads: true
 
 clips_per_video: 10

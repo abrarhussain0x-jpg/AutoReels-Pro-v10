@@ -28,7 +28,7 @@ class VideoMeta:
 class YouTubeMonitor:
     """Scrapes YouTube channels with yt-dlp. Zero cost, no API key."""
 
-    def __init__(self, config: dict, cookies_file: str = "config/cookies.txt"):
+    def __init__(self, config: dict, cookies_file: str = "cloud/config/cookies.txt"):
         self.channels = config.get("channels", [])
         self.cookies  = cookies_file
         self.max_age  = 30   # days
@@ -95,6 +95,8 @@ class YouTubeMonitor:
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
+            # Last-resort: force generic extractor or increase verbosity
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
         ]
         if Path(self.cookies).exists():
             # ensure cookies arg is appended to each variant
@@ -105,6 +107,17 @@ class YouTubeMonitor:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 stderr = (r.stderr or "")
                 if r.returncode != 0 or not r.stdout:
+                    # Persist a short debug trace for post-mortem in cloud/queue/tmp
+                    try:
+                        debug_dir = Path("cloud/queue/tmp")
+                        debug_dir.mkdir(parents=True, exist_ok=True)
+                        vid = video_url.split("v=")[-1].split("&")[0]
+                        dbgfile = debug_dir / f"yt_dlp_debug_{vid}.log"
+                        with dbgfile.open("a", encoding="utf-8") as fh:
+                            fh.write(f"CMD: {' '.join(cmd)}\n")
+                            fh.write((r.stderr or "")[:800] + "\n\n")
+                    except Exception:
+                        pass
                     if "challenge solving failed" in stderr or "Only images are available" in stderr:
                         log.warning("[Monitor] yt-dlp JS challenge or images-only for %s — stderr=%s", video_url, stderr[:200])
                     else:
@@ -139,6 +152,7 @@ class YouTubeMonitor:
                 ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url],
                 ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", video_url],
                 ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", video_url],
             ]
             if Path(self.cookies).exists():
                 cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
@@ -147,6 +161,17 @@ class YouTubeMonitor:
                     r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                     stderr = (r.stderr or "")
                     if r.returncode != 0 or not r.stdout:
+                        # Save debug traces for investigation
+                        try:
+                            debug_dir = Path("cloud/queue/tmp")
+                            debug_dir.mkdir(parents=True, exist_ok=True)
+                            vid = video_url.split("v=")[-1].split("&")[0]
+                            dbgfile = debug_dir / f"yt_dlp_formats_{vid}.log"
+                            with dbgfile.open("a", encoding="utf-8") as fh:
+                                fh.write(f"CMD: {' '.join(cmd)}\n")
+                                fh.write((r.stderr or "")[:800] + "\n\n")
+                        except Exception:
+                            pass
                         log.debug("[Monitor] formats attempt non-zero for %s cmd=%s stderr=%s", video_url, cmd, stderr[:200])
                         continue
                     data = json.loads(r.stdout.strip())
