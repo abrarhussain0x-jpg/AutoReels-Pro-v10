@@ -87,62 +87,81 @@ class YouTubeMonitor:
             return None
         if not video_url.startswith("http"):
             video_url = f"https://www.youtube.com/watch?v={video_url}"
-
-        cmd = ["yt-dlp", "--dump-json", "--no-playlist",
-                "--no-warnings", "--skip-download", video_url]
+        # Try a sequence of yt-dlp invocations with fallbacks to handle
+        # JS challenges, geo blocks, or unplayable formats. Return the
+        # first successful metadata JSON parsed from stdout.
+        cmds = [
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
+        ]
         if Path(self.cookies).exists():
-            cmd += ["--cookies", self.cookies]
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if not r.stdout:
+            # ensure cookies arg is appended to each variant
+            cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
+
+        for cmd in cmds:
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 stderr = (r.stderr or "")
-                if "challenge solving failed" in stderr or "Only images are available" in stderr:
-                    log.warning("[Monitor] yt-dlp JS challenge detected for %s — install Node.js/JS solver. stderr=%s", video_url, stderr[:200])
-                else:
-                    log.debug("[Monitor] empty metadata stdout for %s — stderr=%s", video_url, stderr[:200])
-                return None
-            data = json.loads(r.stdout.strip())
-            return VideoMeta(
-                video_id=data.get("id", ""),
-                title=data.get("title", ""),
-                url=data.get("webpage_url", video_url),
-                channel=data.get("channel", data.get("uploader", "")),
-                duration=int(data.get("duration", 0)),
-                view_count=int(data.get("view_count", 0)),
-                like_count=int(data.get("like_count", 0)),
-                upload_date=data.get("upload_date", ""),
-                description=(data.get("description", "") or "")[:500],
-                tags=data.get("tags", [])[:10],
-                thumbnail_url=data.get("thumbnail", ""),
-            )
-        except Exception as e:
-            log.debug("[Monitor] metadata failed %s: %s", video_url, e)
-            return None
+                if r.returncode != 0 or not r.stdout:
+                    if "challenge solving failed" in stderr or "Only images are available" in stderr:
+                        log.warning("[Monitor] yt-dlp JS challenge or images-only for %s — stderr=%s", video_url, stderr[:200])
+                    else:
+                        log.debug("[Monitor] metadata attempt non-zero exit for %s: cmd=%s stderr=%s", video_url, cmd, stderr[:200])
+                    continue
+                data = json.loads(r.stdout.strip())
+                return VideoMeta(
+                    video_id=data.get("id", ""),
+                    title=data.get("title", ""),
+                    url=data.get("webpage_url", video_url),
+                    channel=data.get("channel", data.get("uploader", "")),
+                    duration=int(data.get("duration", 0)),
+                    view_count=int(data.get("view_count", 0)),
+                    like_count=int(data.get("like_count", 0)),
+                    upload_date=data.get("upload_date", ""),
+                    description=(data.get("description", "") or "")[:500],
+                    tags=data.get("tags", [])[:10],
+                    thumbnail_url=data.get("thumbnail", ""),
+                )
+            except subprocess.TimeoutExpired:
+                log.warning("[Monitor] yt-dlp metadata timeout for %s (cmd=%s)", video_url, cmd)
+                continue
+            except Exception as e:
+                log.debug("[Monitor] metadata failed %s: %s", video_url, e)
+                continue
+        return None
 
     def _has_media_formats(self, video_url: str) -> bool:
         """Return True if yt-dlp reports at least one audio/video format for the URL."""
         try:
-            cmd = ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url]
+            cmds = [
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", video_url],
+            ]
             if Path(self.cookies).exists():
-                cmd = ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--cookies", self.cookies, video_url]
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            stderr = (r.stderr or "")
-            if r.returncode != 0:
-                if "challenge solving failed" in stderr or "Only images are available" in stderr:
-                    log.warning("[Monitor] yt-dlp reports JS challenge or images-only for %s — stderr=%s", video_url, stderr[:200])
-                else:
-                    log.debug("[Monitor] yt-dlp non-zero exit for %s: %s", video_url, stderr[:200])
-                return False
-            if not r.stdout:
-                log.debug("[Monitor] yt-dlp empty stdout for %s — stderr=%s", video_url, stderr[:200])
-                return False
-            data = json.loads(r.stdout.strip())
-            formats = data.get("formats") or []
-            for f in formats:
-                vcodec = f.get("vcodec")
-                acodec = f.get("acodec")
-                if (vcodec and vcodec != "none") or (acodec and acodec != "none"):
-                    return True
+                cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
+            for cmd in cmds:
+                try:
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    stderr = (r.stderr or "")
+                    if r.returncode != 0 or not r.stdout:
+                        log.debug("[Monitor] formats attempt non-zero for %s cmd=%s stderr=%s", video_url, cmd, stderr[:200])
+                        continue
+                    data = json.loads(r.stdout.strip())
+                    formats = data.get("formats") or []
+                    for f in formats:
+                        vcodec = f.get("vcodec")
+                        acodec = f.get("acodec")
+                        if (vcodec and vcodec != "none") or (acodec and acodec != "none"):
+                            return True
+                except subprocess.TimeoutExpired:
+                    log.warning("[Monitor] yt-dlp formats timeout for %s (cmd=%s)", video_url, cmd)
+                    continue
+                except Exception as e:
+                    log.debug("[Monitor] _has_media_formats error %s: %s", video_url, e)
+                    continue
             return False
         except Exception as e:
             log.debug("[Monitor] _has_media_formats error %s: %s", video_url, e)
