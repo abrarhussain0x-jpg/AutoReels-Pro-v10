@@ -91,6 +91,21 @@ jobs:
           python check_env.py || true
           ffmpeg -version | head -1
 
+      # ── 6.1 Install Node.js for yt-dlp JS/EJS solving ─────────────────────────
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # ── 6.2 Write YouTube cookies from secret (optional) ──────────────────────
+      - name: Write YouTube cookies
+        if: secrets.YT_COOKIES_JSON != ''
+        run: |
+          mkdir -p cloud/config
+          printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.json
+          python cloud/utils/convert_cookies_json_to_netscape.py cloud/config/cookies.json cloud/config/cookies.txt
+          rm cloud/config/cookies.json
+
       # ── 7. Run pipeline ───────────────────────────────────────────────────────
       - name: Run AutoReels pipeline
         env:
