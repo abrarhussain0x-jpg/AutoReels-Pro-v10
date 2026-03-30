@@ -137,10 +137,12 @@ jobs:
           python cloud/utils/yt_dlp_health_check.py || (
             echo "Health check failed — printing any yt-dlp debug logs"
             ls -la cloud/queue/tmp || true
-            for f in cloud/queue/tmp/*yt_dlp_debug_* 2>/dev/null; do
+            shopt -s nullglob
+            for f in cloud/queue/tmp/*yt_dlp_debug_*; do
               echo "---- $f ----"
               tail -n 200 "$f" || true
             done
+            shopt -u nullglob
             exit 1
           )
 
