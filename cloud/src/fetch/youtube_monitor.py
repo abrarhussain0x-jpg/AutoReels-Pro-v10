@@ -155,14 +155,19 @@ class YouTubeMonitor:
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
         ]
         cmds = []
+        # Build variants; include both with and without cookies (if available)
         for v in base_variants:
+            variants = []
             if self.js_runtime:
-                cmds.append(v[:-1] + ["--js-runtimes", self.js_runtime, v[-1]])
+                variants.append(v[:-1] + ["--js-runtimes", self.js_runtime, v[-1]])
             else:
-                cmds.append(v)
-        if Path(self.cookies).exists():
-            # ensure cookies arg is appended to each variant
-            cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
+                variants.append(v)
+            # If cookies file exists, also try the same variant with cookies
+            if Path(self.cookies).exists():
+                for base in list(variants):
+                    variants.append(base[:-1] + ["--cookies", self.cookies, base[-1]])
+            # extend main cmds list
+            cmds.extend(variants)
 
         for cmd in cmds:
             try:
@@ -253,8 +258,17 @@ class YouTubeMonitor:
                     cmds.append(v[:-1] + ["--js-runtimes", self.js_runtime, v[-1]])
                 else:
                     cmds.append(v)
-            if Path(self.cookies).exists():
-                cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
+            # Also try variants with and without cookies
+            expanded = []
+            for v in base_variants:
+                if self.js_runtime:
+                    expanded.append(v[:-1] + ["--js-runtimes", self.js_runtime, v[-1]])
+                else:
+                    expanded.append(v)
+                if Path(self.cookies).exists():
+                    # add cookie-enabled variant
+                    expanded.append((v[:-1] + ["--cookies", self.cookies, v[-1]]) if not self.js_runtime else v[:-1] + ["--js-runtimes", self.js_runtime, v[-1], "--cookies", self.cookies])
+            cmds = expanded
             for cmd in cmds:
                 try:
                     r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
