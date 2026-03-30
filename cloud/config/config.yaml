@@ -29,6 +29,78 @@ channels:
     min_views: 0
     min_like_ratio: 0.0
 
+  - url: "https://www.youtube.com/@plotpulse01/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@movierecapsofficial/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@englishtheatre-movieexplai5285/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@moviesclarity2/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@filmjosrecap/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@storyflixmovierecap/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@mychannel-i8m/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
+  - url: "https://www.youtube.com/@movieunlimited-1/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
+    min_views: 0
+    min_like_ratio: 0.0
+
 youtube:
   cookies_file: "config/cookies.txt"
   proxy: ""
