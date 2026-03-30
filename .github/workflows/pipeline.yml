@@ -99,12 +99,15 @@ jobs:
 
       # ── 6.2 Write YouTube cookies from secret (optional) ──────────────────────
       - name: Write YouTube cookies
-        if: ${{ secrets.YT_COOKIES_JSON != '' }}
         run: |
-          mkdir -p cloud/config
-          printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.json
-          python cloud/utils/convert_cookies_json_to_netscape.py cloud/config/cookies.json cloud/config/cookies.txt
-          rm cloud/config/cookies.json
+          if [ -n "${{ secrets.YT_COOKIES_JSON }}" ]; then
+            mkdir -p cloud/config
+            printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.json
+            python cloud/utils/convert_cookies_json_to_netscape.py cloud/config/cookies.json cloud/config/cookies.txt
+            rm cloud/config/cookies.json
+          else
+            echo "YT_COOKIES_JSON not set; skipping cookies write"
+          fi
 
       # ── 7. Run pipeline ───────────────────────────────────────────────────────
       - name: Run AutoReels pipeline
