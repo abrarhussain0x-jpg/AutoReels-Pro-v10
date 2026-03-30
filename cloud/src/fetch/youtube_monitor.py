@@ -47,14 +47,11 @@ class YouTubeMonitor:
 
     def _scan_channel(self, ch: dict) -> List[VideoMeta]:
         url = ch["url"]
-        max_vids = ch.get("max_videos_per_run", 2)
-        min_dur  = ch.get("min_duration", 60)
-        max_dur  = ch.get("max_duration", 7200)
-        exclude  = [k.lower() for k in ch.get("exclude_keywords", [])]
-
+        # Aggressively scan: fetch up to 1000 videos per channel
+        max_vids = ch.get("max_videos_per_run", 1000)
         cmd = [
             "yt-dlp", "--flat-playlist", "--dump-json",
-            "--playlist-end", str(max_vids * 3),   # fetch extra to filter
+            "--playlist-end", str(max_vids),
             "--no-warnings",
         ]
         if Path(self.cookies).exists():
@@ -62,7 +59,7 @@ class YouTubeMonitor:
         cmd.append(url)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             videos = []
             for line in result.stdout.splitlines():
                 if not line.strip():
@@ -71,47 +68,12 @@ class YouTubeMonitor:
                     data = json.loads(line)
                 except Exception:
                     continue
-
-                # Prefer using fields from the flat-playlist JSON (faster, avoids per-video yt-dlp calls)
-                meta = None
-                try:
-                    if data.get("duration") is not None and data.get("view_count") is not None:
-                        vid = data.get("id") or data.get("url") or ""
-                        video_url = data.get("webpage_url") or (f"https://www.youtube.com/watch?v={vid}" if vid else "")
-                        meta = VideoMeta(
-                            video_id=data.get("id", ""),
-                            title=data.get("title", ""),
-                            url=video_url,
-                            channel=data.get("uploader") or data.get("channel") or "",
-                            duration=int(data.get("duration") or 0),
-                            view_count=int(data.get("view_count") or 0),
-                            like_count=int(data.get("like_count") or 0),
-                            upload_date=data.get("upload_date") or "",
-                            description=(data.get("description", "") or "")[:500],
-                            tags=data.get("tags", [])[:10],
-                            thumbnail_url=data.get("thumbnail", ""),
-                        )
-                    else:
-                        # Fallback: fetch full metadata per-video
-                        meta = self._get_metadata(data.get("url") or data.get("id", ""))
-                except Exception:
-                    meta = self._get_metadata(data.get("url") or data.get("id", ""))
+                # Always fetch full metadata for each video
+                meta = self._get_metadata(data.get("url") or data.get("id", ""))
                 if not meta:
                     continue
-                if meta.duration < min_dur or meta.duration > max_dur:
-                    continue
-                title_lower = meta.title.lower()
-                if any(kw in title_lower for kw in exclude):
-                    continue
-
-                # Verify there is at least one downloadable media format
-                if not self._has_media_formats(meta.url):
-                    log.info("[Monitor] skipping %s — no downloadable media formats", meta.video_id)
-                    continue
-
+                # Do not filter by duration, keywords, or media formats
                 videos.append(meta)
-                if len(videos) >= max_vids:
-                    break
             return videos
         except subprocess.TimeoutExpired:
             log.warning("[Monitor] yt-dlp timeout for %s", url)
