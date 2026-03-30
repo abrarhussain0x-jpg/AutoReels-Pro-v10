@@ -105,13 +105,27 @@ jobs:
           echo "--js-runtimes node" >> ~/.config/yt-dlp/config
 
       # ── 6.2 Write YouTube cookies from secret (optional) ──────────────────────
-      - name: Write YouTube cookies
+      - name: Write YouTube cookies (accept JSON or Netscape format)
         run: |
           if [ -n "${{ secrets.YT_COOKIES_JSON }}" ]; then
             mkdir -p cloud/config
-            printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.json
-            python cloud/utils/convert_cookies_json_to_netscape.py cloud/config/cookies.json cloud/config/cookies.txt
-            rm cloud/config/cookies.json
+            # write secret to a temp file
+            printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.tmp
+            # detect whether the content looks like JSON (starts with { or [)
+            first_char=$(head -c 1 cloud/config/cookies.tmp || true)
+            if [ "$first_char" = "{" ] || [ "$first_char" = "[" ]; then
+              echo "Detected JSON cookie export — converting to netscape format"
+              # try converting; if conversion fails, fall back to writing the raw content
+              if python cloud/utils/convert_cookies_json_to_netscape.py cloud/config/cookies.tmp cloud/config/cookies.txt; then
+                rm cloud/config/cookies.tmp
+              else
+                echo "Conversion failed — falling back to writing raw content as cookies.txt"
+                mv cloud/config/cookies.tmp cloud/config/cookies.txt
+              fi
+            else
+              echo "Detected Netscape-format cookies — writing directly to cookies.txt"
+              mv cloud/config/cookies.tmp cloud/config/cookies.txt
+            fi
           else
             echo "YT_COOKIES_JSON not set; skipping cookies write"
           fi
