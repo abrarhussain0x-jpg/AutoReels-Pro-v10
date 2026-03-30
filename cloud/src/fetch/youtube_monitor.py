@@ -33,9 +33,11 @@ class YouTubeMonitor:
         self.cookies  = cookies_file
         self.max_age  = 30   # days
         # Minimum delay between individual yt-dlp metadata calls (seconds)
-        self.min_delay_between_calls = float(config.get("ytdlp_min_delay", 1.5))
+        # Lower default to speed up runs; can be overridden via config key `ytdlp_min_delay`.
+        self.min_delay_between_calls = float(config.get("ytdlp_min_delay", 0.5))
         # Maximum metadata fetches per channel per run (conservative default)
-        self.max_metadata_per_channel = int(config.get("max_metadata_per_channel", 50))
+        # Reduce default to limit run time; override with `max_metadata_per_channel` in config.
+        self.max_metadata_per_channel = int(config.get("max_metadata_per_channel", 12))
         # Detect a JavaScript runtime (yt-dlp can use node or deno for JS).
         # Only pass the --js-runtimes flag when a runtime is available.
         js_rt = None
