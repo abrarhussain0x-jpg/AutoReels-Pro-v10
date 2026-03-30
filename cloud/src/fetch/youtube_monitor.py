@@ -99,17 +99,25 @@ class YouTubeMonitor:
             lines = [l for l in result.stdout.splitlines() if l.strip()]
             # Limit number of metadata fetches per channel to avoid bursts
             lines = lines[: self.max_metadata_per_channel]
-            for line in lines:
+            for idx, line in enumerate(lines):
+                if not line.strip():
+                    log.debug(f"[Monitor] Skipping empty line at idx={idx}")
+                    continue
                 try:
                     data = json.loads(line)
-                except Exception:
+                except Exception as e:
+                    log.warning(f"[Monitor] Failed to parse JSON at idx={idx}: {e} line={line[:120]}")
                     continue
-                # Always fetch full metadata for each video
-                metadata_calls += 1
-                meta = self._get_metadata(data.get("url") or data.get("id", ""))
+                vid_id = data.get("url") or data.get("id", "")
+                if not vid_id:
+                    log.warning(f"[Monitor] No video id/url at idx={idx}: {data}")
+                    continue
+                meta = self._get_metadata(vid_id)
                 if not meta:
+                    log.info(f"[Monitor] Skipped video at idx={idx} id={vid_id}: no metadata returned (yt-dlp fail, rate-limit, or filtered)")
                     continue
                 # Do not filter by duration, keywords, or media formats
+                log.debug(f"[Monitor] Accepted video at idx={idx} id={vid_id}: {meta.title}")
                 videos.append(meta)
                 # Small jittered sleep between metadata calls to reduce rate-limit risk
                 try:
