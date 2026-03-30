@@ -40,11 +40,19 @@ class YouTubeMonitor:
                 js_rt = candidate
                 break
         self.js_runtime = js_rt
+        # Rate-limit cooldown: epoch seconds until which calls should be skipped.
+        self._cooldown_until = 0
+        # Path to persist rate-limit cooldown across processes/runs
+        self._cooldown_file = Path("cloud/queue/tmp/yt_dlp_rate_limit.json")
 
     def scan_all(self) -> List[VideoMeta]:
         """Scan all configured channels, return new candidates."""
         all_videos = []
         for ch in self.channels:
+            # Respect persistent cooldown if set
+            if self._is_rate_limited():
+                log.warning("[Monitor] skipping channel scans due to yt-dlp rate-limit until %s", time.ctime(self._cooldown_until))
+                break
             try:
                 videos = self._scan_channel(ch)
                 all_videos.extend(videos)
@@ -70,6 +78,12 @@ class YouTubeMonitor:
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            # Check stderr for explicit rate-limit message and set cooldown
+            stderr = (result.stderr or "")
+            if "rate-limited" in stderr or "rate limited" in stderr or "The current session has been rate-limited" in stderr:
+                # default: 1 hour cooldown
+                self._set_rate_limit_cooldown(60 * 60)
+                log.warning("[Monitor] detected yt-dlp rate-limit when scanning %s — entering cooldown", url)
             videos = []
             for line in result.stdout.splitlines():
                 if not line.strip():
@@ -94,6 +108,9 @@ class YouTubeMonitor:
 
     def _get_metadata(self, video_url: str) -> Optional[VideoMeta]:
         if not video_url:
+            return None
+        if self._is_rate_limited():
+            log.debug("[Monitor] skipping metadata fetch for %s due to yt-dlp cooldown", video_url)
             return None
         if not video_url.startswith("http"):
             video_url = f"https://www.youtube.com/watch?v={video_url}"
@@ -122,6 +139,10 @@ class YouTubeMonitor:
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 stderr = (r.stderr or "")
+                # Detect yt-dlp rate-limit and persist cooldown
+                if "rate-limited" in stderr or "rate limited" in stderr or "The current session has been rate-limited" in stderr:
+                    self._set_rate_limit_cooldown(60 * 60)
+                    log.warning("[Monitor] detected yt-dlp rate-limit during metadata fetch %s — entering cooldown", video_url)
                 if r.returncode != 0 or not r.stdout:
                     # Persist a short debug trace for post-mortem in cloud/queue/tmp
                     try:
@@ -160,6 +181,33 @@ class YouTubeMonitor:
                 log.debug("[Monitor] metadata failed %s: %s", video_url, e)
                 continue
         return None
+
+    def _set_rate_limit_cooldown(self, seconds: int = 3600) -> None:
+        """Set an in-memory and persistent cooldown for yt-dlp calls."""
+        try:
+            until = int(time.time()) + int(seconds)
+            self._cooldown_until = until
+            # Ensure tmp dir exists
+            self._cooldown_file.parent.mkdir(parents=True, exist_ok=True)
+            with self._cooldown_file.open("w", encoding="utf-8") as fh:
+                json.dump({"until": until}, fh)
+        except Exception:
+            # non-fatal: just set in-memory
+            self._cooldown_until = int(time.time()) + int(seconds)
+
+    def _is_rate_limited(self) -> bool:
+        """Return True if a persistent or in-memory cooldown is active."""
+        try:
+            # Load persisted cooldown if present
+            if self._cooldown_file.exists():
+                try:
+                    data = json.loads(self._cooldown_file.read_text(encoding="utf-8"))
+                    self._cooldown_until = int(data.get("until", 0))
+                except Exception:
+                    pass
+            return int(time.time()) < int(self._cooldown_until)
+        except Exception:
+            return False
 
     def _has_media_formats(self, video_url: str) -> bool:
         """Return True if yt-dlp reports at least one audio/video format for the URL."""
