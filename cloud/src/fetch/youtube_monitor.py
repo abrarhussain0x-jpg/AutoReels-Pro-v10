@@ -1,0 +1,238 @@
+"""
+youtube_monitor.py — Real YouTube channel scraper using yt-dlp.
+Finds new videos, filters by config rules, returns VideoMeta objects.
+No API key needed. Uses yt-dlp + cookies for auth.
+"""
+from __future__ import annotations
+import json, logging, subprocess, time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Optional
+
+log = logging.getLogger(__name__)
+
+@dataclass
+class VideoMeta:
+    video_id: str
+    title: str
+    url: str
+    channel: str
+    duration: int        # seconds
+    view_count: int
+    like_count: int
+    upload_date: str     # YYYYMMDD
+    description: str = ""
+    tags: List[str] = field(default_factory=list)
+    thumbnail_url: str = ""
+
+class YouTubeMonitor:
+    """Scrapes YouTube channels with yt-dlp. Zero cost, no API key."""
+
+    def __init__(self, config: dict, cookies_file: str = "config/cookies.txt"):
+        self.channels = config.get("channels", [])
+        self.cookies  = cookies_file
+        self.max_age  = 30   # days
+
+    def scan_all(self) -> List[VideoMeta]:
+        """Scan all configured channels, return new candidates."""
+        all_videos = []
+        for ch in self.channels:
+            try:
+                videos = self._scan_channel(ch)
+                all_videos.extend(videos)
+                log.info("[Monitor] %s → %d candidates", ch["url"], len(videos))
+            except Exception as e:
+                log.warning("[Monitor] channel scan failed %s: %s", ch.get("url"), e)
+        return all_videos
+
+    def _scan_channel(self, ch: dict) -> List[VideoMeta]:
+        url = ch["url"]
+        max_vids = ch.get("max_videos_per_run", 2)
+        min_dur  = ch.get("min_duration", 60)
+        max_dur  = ch.get("max_duration", 7200)
+        exclude  = [k.lower() for k in ch.get("exclude_keywords", [])]
+
+        cmd = [
+            "yt-dlp", "--flat-playlist", "--dump-json",
+            "--playlist-end", str(max_vids * 3),   # fetch extra to filter
+            "--no-warnings",
+        ]
+        if Path(self.cookies).exists():
+            cmd += ["--cookies", self.cookies]
+        cmd.append(url)
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            videos = []
+            for line in result.stdout.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+
+                # Prefer using fields from the flat-playlist JSON (faster, avoids per-video yt-dlp calls)
+                meta = None
+                try:
+                    if data.get("duration") is not None and data.get("view_count") is not None:
+                        vid = data.get("id") or data.get("url") or ""
+                        video_url = data.get("webpage_url") or (f"https://www.youtube.com/watch?v={vid}" if vid else "")
+                        meta = VideoMeta(
+                            video_id=data.get("id", ""),
+                            title=data.get("title", ""),
+                            url=video_url,
+                            channel=data.get("uploader") or data.get("channel") or "",
+                            duration=int(data.get("duration") or 0),
+                            view_count=int(data.get("view_count") or 0),
+                            like_count=int(data.get("like_count") or 0),
+                            upload_date=data.get("upload_date") or "",
+                            description=(data.get("description", "") or "")[:500],
+                            tags=data.get("tags", [])[:10],
+                            thumbnail_url=data.get("thumbnail", ""),
+                        )
+                    else:
+                        # Fallback: fetch full metadata per-video
+                        meta = self._get_metadata(data.get("url") or data.get("id", ""))
+                except Exception:
+                    meta = self._get_metadata(data.get("url") or data.get("id", ""))
+                if not meta:
+                    continue
+                if meta.duration < min_dur or meta.duration > max_dur:
+                    continue
+                title_lower = meta.title.lower()
+                if any(kw in title_lower for kw in exclude):
+                    continue
+
+                # Verify there is at least one downloadable media format
+                if not self._has_media_formats(meta.url):
+                    log.info("[Monitor] skipping %s — no downloadable media formats", meta.video_id)
+                    continue
+
+                videos.append(meta)
+                if len(videos) >= max_vids:
+                    break
+            return videos
+        except subprocess.TimeoutExpired:
+            log.warning("[Monitor] yt-dlp timeout for %s", url)
+            return []
+        except FileNotFoundError:
+            log.error("[Monitor] yt-dlp not installed. Run: pip install yt-dlp")
+            return []
+
+    def _get_metadata(self, video_url: str) -> Optional[VideoMeta]:
+        if not video_url:
+            return None
+        if not video_url.startswith("http"):
+            video_url = f"https://www.youtube.com/watch?v={video_url}"
+
+        cmd = ["yt-dlp", "--dump-json", "--no-playlist",
+                "--no-warnings", "--skip-download", video_url]
+        if Path(self.cookies).exists():
+            cmd += ["--cookies", self.cookies]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if not r.stdout:
+                stderr = (r.stderr or "")
+                if "challenge solving failed" in stderr or "Only images are available" in stderr:
+                    log.warning("[Monitor] yt-dlp JS challenge detected for %s — install Node.js/JS solver. stderr=%s", video_url, stderr[:200])
+                else:
+                    log.debug("[Monitor] empty metadata stdout for %s — stderr=%s", video_url, stderr[:200])
+                return None
+            data = json.loads(r.stdout.strip())
+            return VideoMeta(
+                video_id=data.get("id", ""),
+                title=data.get("title", ""),
+                url=data.get("webpage_url", video_url),
+                channel=data.get("channel", data.get("uploader", "")),
+                duration=int(data.get("duration", 0)),
+                view_count=int(data.get("view_count", 0)),
+                like_count=int(data.get("like_count", 0)),
+                upload_date=data.get("upload_date", ""),
+                description=(data.get("description", "") or "")[:500],
+                tags=data.get("tags", [])[:10],
+                thumbnail_url=data.get("thumbnail", ""),
+            )
+        except Exception as e:
+            log.debug("[Monitor] metadata failed %s: %s", video_url, e)
+            return None
+
+    def _has_media_formats(self, video_url: str) -> bool:
+        """Return True if yt-dlp reports at least one audio/video format for the URL."""
+        try:
+            cmd = ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url]
+            if Path(self.cookies).exists():
+                cmd = ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--cookies", self.cookies, video_url]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            stderr = (r.stderr or "")
+            if r.returncode != 0:
+                if "challenge solving failed" in stderr or "Only images are available" in stderr:
+                    log.warning("[Monitor] yt-dlp reports JS challenge or images-only for %s — stderr=%s", video_url, stderr[:200])
+                else:
+                    log.debug("[Monitor] yt-dlp non-zero exit for %s: %s", video_url, stderr[:200])
+                return False
+            if not r.stdout:
+                log.debug("[Monitor] yt-dlp empty stdout for %s — stderr=%s", video_url, stderr[:200])
+                return False
+            data = json.loads(r.stdout.strip())
+            formats = data.get("formats") or []
+            for f in formats:
+                vcodec = f.get("vcodec")
+                acodec = f.get("acodec")
+                if (vcodec and vcodec != "none") or (acodec and acodec != "none"):
+                    return True
+            return False
+        except Exception as e:
+            log.debug("[Monitor] _has_media_formats error %s: %s", video_url, e)
+            return False
+
+    def download(self, video: VideoMeta, output_dir: Path,
+                 quality: str = "bestvideo[height<=1080]+bestaudio/best") -> Optional[Path]:
+        """Download a video. Returns path to downloaded file."""
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_tpl = str(output_dir / f"{video.video_id}.%(ext)s")
+
+        cmd = [
+            "yt-dlp", "-f", quality,
+            "--merge-output-format", "mp4",
+            "-o", out_tpl, "--no-warnings",
+        ]
+        if Path(self.cookies).exists():
+            cmd += ["--cookies", self.cookies]
+        cmd.append(video.url)
+
+        log.info("[Monitor] downloading %s: %s", video.video_id, video.title[:50])
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=600)
+            if r.returncode != 0:
+                err = r.stderr.decode() if isinstance(r.stderr, (bytes, str)) else str(r.stderr)
+                log.warning("[Monitor] initial download failed, trying fallback formats: %s", err[:200])
+                # Try fallback formats
+                for fallback in ["bestvideo+bestaudio/best", "best"]:
+                    try:
+                        fb_cmd = ["yt-dlp", "-f", fallback, "--merge-output-format", "mp4",
+                                  "-o", out_tpl, "--no-warnings"]
+                        if Path(self.cookies).exists():
+                            fb_cmd += ["--cookies", self.cookies]
+                        fb_cmd.append(video.url)
+                        r2 = subprocess.run(fb_cmd, capture_output=True, timeout=600)
+                        if r2.returncode == 0:
+                            r = r2
+                            break
+                    except Exception:
+                        continue
+                else:
+                    log.error("[Monitor] download failed: %s", err[:200])
+                    return None
+            # Find output file
+            for f in output_dir.glob(f"{video.video_id}.*"):
+                if f.suffix in (".mp4", ".mkv", ".webm"):
+                    log.info("[Monitor] downloaded → %s (%.1f MB)",
+                             f.name, f.stat().st_size / 1e6)
+                    return f
+        except subprocess.TimeoutExpired:
+            log.error("[Monitor] download timeout for %s", video.video_id)
+        except FileNotFoundError:
+            log.error("[Monitor] yt-dlp not installed")
+        return None

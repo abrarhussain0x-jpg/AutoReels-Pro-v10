@@ -1,0 +1,223 @@
+# ══════════════════════════════════════════════════════════════════
+#  AUTO-REELS PRO v10.0 — Master Configuration
+#  All secrets use ${ENV_VAR} — set them in GitHub Secrets / .env
+# ══════════════════════════════════════════════════════════════════
+
+anthropic_api_key: "${ANTHROPIC_API_KEY}"
+niche: "movie"
+
+channels:
+  - url: "https://www.youtube.com/@Plotpulse01/videos"
+    max_videos_per_run: 1
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    min_duration: 60
+    max_duration: 7200
+    max_age_days: 30
+    min_views: 0
+    min_like_ratio: 0.0
+    keywords_filter: []
+    exclude_keywords: ["live", "podcast", "interview"]
+
+  - url: "https://www.youtube.com/@StoryLineMovie/videos"
+    download_quality: "bestvideo+bestaudio/best/bestvideo/best"
+    max_videos_per_run: 1
+    min_duration: 60
+    max_duration: 7200
+    max_age_days: 30
+    min_views: 0
+    min_like_ratio: 0.0
+
+youtube:
+  cookies_file: "config/cookies.txt"
+  proxy: ""
+  concurrent_channels: 3
+  debug_downloads: true
+
+clips_per_video: 10
+clip_length_seconds: 55
+min_clips: 3
+max_clips: 20
+clips_upload_cap_per_video: 10
+clip_upload_gap_seconds: 45
+
+output:
+  width: 1080
+  height: 1920
+  crf: 22
+  preset: "fast"
+  hook_text: "PART {index:02d}"
+  progress_bar: true
+  subtitles: true
+  whisper_model: "tiny"
+  generate_thumbnail: true
+  hardware_accel: false
+
+branding:
+  channel_name: "TimeFast"
+  watermark: ""
+  theme: "classic"
+
+# ── v10: Scene-Aware Clipping ───────────────────────────────────
+scene_clipper:
+  enabled: true
+  vad_model: "tiny"
+  min_clip_energy: 0.08
+  scene_threshold: 0.30
+  use_vad_boundaries: true
+
+# ── v10: Word-Level Subtitle Engine ────────────────────────────
+subtitle_engine_v2:
+  enabled: true
+  font_size: 52
+  accent_color: "#FFE600"
+  shadow_color: "#000000"
+  position: "bottom_third"
+  highlight_power_word: true
+  use_claude_highlight: true
+
+# ── v10: Hook Optimizer ─────────────────────────────────────────
+hook_optimizer:
+  enabled: true
+  min_trials_for_confidence: 10
+  exploration_factor: 1.5
+
+# ── v10: Multi-Account Rotation ─────────────────────────────────
+facebook:
+  accounts:
+    - page_id: "${FB_PAGE_ID}"
+      access_token: "${FB_PAGE_ACCESS_TOKEN}"
+      daily_limit: 10
+  published: true
+  upload_as_reel: true
+  disabled: false
+
+tiktok:
+  disabled: true
+  accounts:
+    - access_token: "${TIKTOK_ACCESS_TOKEN}"
+      daily_limit: 15
+  privacy_level: "PUBLIC_TO_EVERYONE"
+  allow_comments: true
+  allow_duet: true
+  allow_stitch: true
+
+instagram:
+  disabled: true
+  accounts:
+    - ig_user_id: "${IG_USER_ID}"
+      access_token: "${IG_ACCESS_TOKEN}"
+      daily_limit: 10
+  share_to_feed: true
+
+youtube_shorts:
+  disabled: true
+  client_id: "${YOUTUBE_CLIENT_ID}"
+  client_secret: "${YOUTUBE_CLIENT_SECRET}"
+  refresh_token: "${YOUTUBE_REFRESH_TOKEN}"
+  category_id: "24"
+  privacy_status: "public"
+
+threads:
+  disabled: true
+  user_id: "${THREADS_USER_ID}"
+  access_token: "${THREADS_ACCESS_TOKEN}"
+  reply_control: "everyone"
+
+# ── v10: Comment Bot ────────────────────────────────────────────
+comment_bot:
+  enabled: false
+  reply_to_questions: true
+  max_replies_per_post: 5
+  pull_at_hours: [24, 48]
+  negative_sentiment_alert_threshold: 0.30
+
+# ── v10: Thumbnail A/B Testing ──────────────────────────────────
+thumbnail_ab:
+  enabled: true
+  variants: 3
+
+# ── v10: Velocity Tracker ───────────────────────────────────────
+velocity_tracker:
+  pull_schedule_hours: [1, 6, 24, 72]
+  viral_threshold_views_per_hour: 500
+
+# ── v10: Retry / Failsafe ───────────────────────────────────────
+retry_engine:
+  max_retries: 5
+  base_delay_seconds: 1
+  circuit_breaker_threshold: 3
+  circuit_reset_minutes: 30
+
+# ── v9 legacy settings (unchanged) ─────────────────────────────
+scene_detection: true
+scene_threshold: 0.35
+skip_start_pct: 0.08
+skip_end_pct: 0.05
+parallel_workers: 2
+quality_score_clips: true
+ken_burns_zoom: true
+color_grade: true
+beat_sync_cuts: true
+face_aware_crop: false
+
+use_smart_clip_selector: true
+use_subtitle_engine: true
+use_pil_thumbnails: true
+min_audio_energy: 0.05
+dedup_threshold: 0.85
+
+process_threshold: 0.01
+defer_threshold: 0.01
+ai_threshold_low: 0.01
+ai_threshold_high: 0.10
+min_duration_global: 60
+max_duration_global: 7200
+
+scoring_weights:
+  engagement:  0.25
+  recency:     0.20
+  velocity:    0.20
+  trend:       0.15
+  channel:     0.10
+  like_ratio:  0.07
+  comments:    0.03
+
+daily_upload_limit: 5
+concurrent_uploads: 2
+
+audience_timezone: "America/New_York"
+upload_times:
+  - "09:00"
+  - "12:00"
+  - "15:00"
+  - "18:00"
+  - "21:00"
+
+notifications:
+  telegram:
+    token: "${TELEGRAM_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  discord:
+    webhook_url: "${DISCORD_WEBHOOK}"
+  slack:
+    webhook_url: "${SLACK_WEBHOOK}"
+  email:
+    smtp_host: ""
+    smtp_port: 587
+    smtp_user: "${SMTP_USER}"
+    smtp_pass: "${SMTP_PASS}"
+    to_address: "${NOTIFY_EMAIL}"
+
+cleanup_after_hours: 72
+dashboard_port: 8888
+
+schedule:
+  check_interval_minutes: 15
+
+prediction_gate: false
+prediction_threshold: 1.2
+prediction_min_confidence: 0.30
+prediction_min_samples: 20
+
+narrative_arc:
+  enabled: true

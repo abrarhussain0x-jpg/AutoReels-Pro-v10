@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: autoreels-pro
+spec:
+  selector:
+    app: autoreels-pro
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: web
+    - port: 5555
+      targetPort: 5555
+      name: celery-flower
+  type: LoadBalancer
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoreels-pro-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: autoreels-pro
+      component: web
+  template:
+    metadata:
+      labels:
+        app: autoreels-pro
+        component: web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/your-org/autoreels-pro:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: database_url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: redis_url
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: anthropic_api_key
+            - name: FB_PAGE_IDS
+              valueFrom:
+                configMapKeyRef:
+                  name: autoreels-config
+                  key: fb_page_ids
+            - name: SLACK_WEBHOOK
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: slack_webhook
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoreels-pro-celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: autoreels-pro
+      component: celery-worker
+  template:
+    metadata:
+      labels:
+        app: autoreels-pro
+        component: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: ghcr.io/your-org/autoreels-pro:latest
+          imagePullPolicy: Always
+          command: ["celery", "-A", "src.tasks", "worker", "-l", "info", "-c", "4"]
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: database_url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: redis_url
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: anthropic_api_key
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoreels-pro-celery-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: autoreels-pro
+      component: celery-beat
+  template:
+    metadata:
+      labels:
+        app: autoreels-pro
+        component: celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: ghcr.io/your-org/autoreels-pro:latest
+          imagePullPolicy: Always
+          command: ["celery", "-A", "src.tasks", "beat", "-l", "info", "-s", "/tmp/celerybeat-schedule"]
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: database_url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: autoreels-secrets
+                  key: redis_url
+          volumeMounts:
+            - name: celerybeat-schedule
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: celerybeat-schedule
+          emptyDir: {}
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoreels-config
+data:
+  fb_page_ids: "123456789,987654321"
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: autoreels-secrets
+type: Opaque
+stringData:
+  database_url: "postgresql://user:pass@db:5432/autoreels"
+  redis_url: "redis://redis:6379/0"
+  anthropic_api_key: ""
+  slack_webhook: ""

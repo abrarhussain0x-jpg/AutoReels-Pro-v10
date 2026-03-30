@@ -1,0 +1,80 @@
+name: Weekly Report
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'   # Every Monday at 09:00 UTC
+  workflow_dispatch:
+
+jobs:
+  weekly-report:
+    name: Generate Weekly Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore databases
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud/queue/hooks.db
+            cloud/queue/ab.db
+            cloud/queue/analytics.db
+            cloud/queue/velocity.db
+          key: autoreels-sqlite-dbs-v2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: cloud/requirements.txt
+
+      - name: Install deps
+        run: pip install -r cloud/requirements.txt
+
+      - name: Pull metrics
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          AUTOREELS_FORCE_RUN: "1"
+          ENVIRONMENT: "github_actions"
+        run: |
+          cd cloud
+          python main.py --pull-metrics || true
+
+      - name: Generate weekly report
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          ENVIRONMENT: "github_actions"
+        run: |
+          cd cloud
+          python main.py --report
+          python main.py --hook-report
+          python main.py --velocity-report
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-report-${{ github.run_number }}
+          path: cloud/queue/report_*.txt
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Save databases
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud/queue/hooks.db
+            cloud/queue/ab.db
+            cloud/queue/analytics.db
+            cloud/queue/velocity.db
+          key: autoreels-sqlite-dbs-v2

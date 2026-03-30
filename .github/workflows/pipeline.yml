@@ -1,0 +1,171 @@
+name: AutoReels Pipeline
+
+# ─── Triggers ──────────────────────────────────────────────────────────────────
+on:
+  schedule:
+    - cron: '0 */4 * * *'   # Every 4 hours (6× per day)
+  workflow_dispatch:          # Manual trigger from GitHub Actions tab
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: false
+        default: '--once'
+        type: choice
+        options:
+          - '--once'
+          - '--dry-run'
+          - '--scan'
+          - '--pull-metrics'
+          - '--hook-report'
+          - '--velocity-report'
+          - '--comment-sweep'
+          - '--retry-failed'
+
+# ─── Concurrency: only one pipeline run at a time ─────────────────────────────
+concurrency:
+  group: autoreels-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    name: Run Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Restore persistent SQLite databases ────────────────────────────────
+      # Databases survive between runs via GitHub Actions cache.
+      - name: Restore pipeline databases
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud/queue/hooks.db
+            cloud/queue/ab.db
+            cloud/queue/analytics.db
+            cloud/queue/failed.db
+            cloud/queue/velocity.db
+            cloud/queue/comments.db
+            cloud/queue/thumbnail_ab.db
+            cloud/queue/account_rotation.db
+            cloud/queue/jobs.db
+          key: autoreels-sqlite-dbs-v2
+          restore-keys: |
+            autoreels-sqlite-dbs-
+
+      # ── 3. Python setup ───────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: cloud/requirements.txt
+
+      # ── 4. System dependencies ────────────────────────────────────────────────
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            libsm6 \
+            libxext6 \
+            libxrender1
+
+      # ── 5. Python dependencies ────────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r cloud/requirements.txt
+
+      # ── 6. Verify environment ─────────────────────────────────────────────────
+      - name: Validate environment
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: |
+          cd cloud
+          python check_env.py || true
+          ffmpeg -version | head -1
+
+      # ── 7. Run pipeline ───────────────────────────────────────────────────────
+      - name: Run AutoReels pipeline
+        env:
+          # ── Anthropic ──────────────────────────────────────
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # ── Facebook ───────────────────────────────────────
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_API_VERSION: ${{ secrets.FB_API_VERSION || 'v19.0' }}
+
+          # ── TikTok (optional) ──────────────────────────────
+          TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+
+          # ── Instagram (optional) ───────────────────────────
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+
+          # ── YouTube Shorts (optional) ──────────────────────
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+
+          # ── Notifications (optional) ───────────────────────
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+          # ── Runtime flags ──────────────────────────────────
+          AUTOREELS_FORCE_RUN: "1"
+          ENVIRONMENT: "github_actions"
+
+          # ── SQLite data dir ────────────────────────────────
+          AUTOREELS_QUEUE_DIR: "${{ github.workspace }}/cloud/queue"
+
+        run: |
+          MODE="${{ github.event.inputs.mode || '--once' }}"
+          echo "Running: python cloud/main.py $MODE"
+          cd cloud
+          python main.py $MODE
+
+      # ── 8. Save databases back to cache ──────────────────────────────────────
+      - name: Save pipeline databases
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud/queue/hooks.db
+            cloud/queue/ab.db
+            cloud/queue/analytics.db
+            cloud/queue/failed.db
+            cloud/queue/velocity.db
+            cloud/queue/comments.db
+            cloud/queue/thumbnail_ab.db
+            cloud/queue/account_rotation.db
+            cloud/queue/jobs.db
+          key: autoreels-sqlite-dbs-v2
+
+      # ── 9. Upload queue report as artifact ───────────────────────────────────
+      - name: Upload run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-report-${{ github.run_number }}
+          path: |
+            cloud/queue/report_*.txt
+            cloud/logs/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # ── 10. Notify on failure ─────────────────────────────────────────────────
+      - name: Notify on failure
+        if: failure() && secrets.TELEGRAM_TOKEN != ''
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="❌ AutoReels pipeline failed — run #${{ github.run_number }}. Check: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

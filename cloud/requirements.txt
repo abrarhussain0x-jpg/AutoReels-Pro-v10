@@ -1,0 +1,71 @@
+# AUTO-REELS PRO v10.0 — Production Requirements
+# ── Core ──────────────────────────────────────────
+yt-dlp>=2025.1.0
+requests==2.32.3
+python-dotenv==1.0.1
+PyYAML==6.0.2
+
+# ── Video Processing ──────────────────────────────
+ffmpeg-python==0.2.1
+Pillow==10.4.0
+imagehash==4.3.1
+opencv-python-headless==4.10.0.84
+
+# ── Audio / Transcription (v10: word-level) ────────
+faster-whisper==1.1.0
+
+# ── Scene Detection ───────────────────────────────
+scenedetect==0.6.4
+
+# ── ML / Analytics ────────────────────────────────
+numpy>=1.26.0
+scipy==1.13.1
+scikit-learn==1.5.2
+
+# ── Database (Production Grade) ───────────────────
+supabase==2.10.0
+psycopg2-binary==2.9.10
+sqlalchemy==2.0.36
+
+# ── Async / Job Queue ─────────────────────────────
+celery==5.4.0
+redis==5.2.0
+kombu==5.4.2
+
+# ── Dashboard & API ───────────────────────────────
+flask==3.1.0
+flask-cors==5.0.0
+flask-sqlalchemy==3.1.1
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+websockets==14.1
+slowapi==0.1.9
+
+# ── API / HTTP ────────────────────────────────────
+httpx==0.28.1
+aiohttp==3.11.10
+
+# ── Anthropic ─────────────────────────────────────
+anthropic>=0.40.0
+
+# ── Monitoring & Logging ──────────────────────────
+sentry-sdk[fastapi]==2.19.2
+python-json-logger==2.0.7
+
+# ── Scheduling ───────────────────────────────────
+schedule==1.2.2
+croniter==3.0.3
+
+# ── Config Management ─────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# ── Testing ───────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.1
+
+# ── Utilities ─────────────────────────────────────
+python-slugify==8.0.4
+tenacity==9.0.0

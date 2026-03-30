@@ -1,0 +1,66 @@
+# ── Secrets & Credentials ────────────────────────────────────────────────────
+.env
+cloud/.env
+*.env
+config/cookies.txt
+cloud/config/cookies.txt
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# ── Databases & Queues ───────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+cloud/queue/*.db
+cloud/queue/*.json
+
+# ── Logs & Cache ─────────────────────────────────────────────────────────────
+*.log
+cloud/logs/
+/tmp/
+cloud/queue/report_*.txt
+
+# ── Video Processing Cache ───────────────────────────────────────────────────
+/tmp/autoreels-cache/
+*.mp4
+*.mkv
+*.webm
+*.m4a
+*.jpg
+*.jpeg
+*.png
+*.webp
+!cloud/src/**/*.png
+!docs/**/*.png
+
+# ── IDE & OS ─────────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# ── GitHub Actions (local act runner) ────────────────────────────────────────
+.act/

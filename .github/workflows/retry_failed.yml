@@ -1,0 +1,75 @@
+name: Retry Failed Uploads
+
+on:
+  schedule:
+    - cron: '30 */6 * * *'   # Every 6 hours, offset from main pipeline
+  workflow_dispatch:
+
+jobs:
+  retry:
+    name: Retry Dead Letter Queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore databases
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud/queue/hooks.db
+            cloud/queue/ab.db
+            cloud/queue/analytics.db
+            cloud/queue/failed.db
+            cloud/queue/velocity.db
+            cloud/queue/comments.db
+            cloud/queue/thumbnail_ab.db
+            cloud/queue/account_rotation.db
+            cloud/queue/jobs.db
+          key: autoreels-sqlite-dbs-v2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: cloud/requirements.txt
+
+      - name: Install system deps
+        run: sudo apt-get install -y ffmpeg libsm6 libxext6
+
+      - name: Install Python deps
+        run: pip install -r cloud/requirements.txt
+
+      - name: Retry failed uploads
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          AUTOREELS_FORCE_RUN: "1"
+          ENVIRONMENT: "github_actions"
+        run: |
+          cd cloud
+          python main.py --retry-failed
+
+      - name: Save databases
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud/queue/hooks.db
+            cloud/queue/ab.db
+            cloud/queue/analytics.db
+            cloud/queue/failed.db
+            cloud/queue/velocity.db
+            cloud/queue/comments.db
+            cloud/queue/thumbnail_ab.db
+            cloud/queue/account_rotation.db
+            cloud/queue/jobs.db
+          key: autoreels-sqlite-dbs-v2

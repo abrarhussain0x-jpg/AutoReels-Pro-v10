@@ -1,0 +1,164 @@
+version: '3.8'
+
+# ─── Usage ────────────────────────────────────────────────────────────────────
+# 1. Copy .env.example → .env and fill in your secrets
+# 2. docker-compose up -d
+# 3. Dashboard:  http://localhost:5000
+# 4. FastAPI:    http://localhost:8000/docs
+# 5. Flower:     http://localhost:5555
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: autoreels-db
+    environment:
+      POSTGRES_DB: autoreels
+      POSTGRES_USER: autoreels
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoreels"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache + Celery Broker
+  redis:
+    image: redis:7-alpine
+    container_name: autoreels-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Flask Dashboard
+  web:
+    build: .
+    container_name: autoreels-web
+    command: python cloud/src/dashboard/app_v2.py
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://autoreels:${POSTGRES_PASSWORD}@postgres:5432/autoreels
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      FB_PAGE_IDS: ${FB_PAGE_ID}
+      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
+      DEBUG: ${DEBUG:-true}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - queue_data:/app/cloud/queue
+    restart: unless-stopped
+
+  # Celery Worker
+  celery-worker:
+    build: .
+    container_name: autoreels-worker
+    command: celery -A cloud.src.tasks worker -l info -c 4
+    working_dir: /app
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://autoreels:${POSTGRES_PASSWORD}@postgres:5432/autoreels
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      FB_PAGE_ID: ${FB_PAGE_ID}
+      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
+      TIKTOK_ACCESS_TOKEN: ${TIKTOK_ACCESS_TOKEN:-}
+      IG_USER_ID: ${IG_USER_ID:-}
+      IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - queue_data:/app/cloud/queue
+    restart: unless-stopped
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build: .
+    container_name: autoreels-beat
+    command: celery -A cloud.src.tasks beat -l info --scheduler celery.beat:PersistentScheduler
+    working_dir: /app
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://autoreels:${POSTGRES_PASSWORD}@postgres:5432/autoreels
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - queue_data:/app/cloud/queue
+    restart: unless-stopped
+
+  # Flower (Task Monitoring)
+  flower:
+    build: .
+    container_name: autoreels-flower
+    command: celery -A cloud.src.tasks flower --port=5555
+    working_dir: /app
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    volumes:
+      - .:/app
+    restart: unless-stopped
+
+  # FastAPI Real-Time API
+  api:
+    build: .
+    container_name: autoreels-api
+    command: python -m uvicorn cloud.src.api:app --host 0.0.0.0 --port 8000 --reload
+    working_dir: /app
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql://autoreels:${POSTGRES_PASSWORD}@postgres:5432/autoreels
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5000}
+      FB_PAGE_ID: ${FB_PAGE_ID}
+      FB_PAGE_ACCESS_TOKEN: ${FB_PAGE_ACCESS_TOKEN}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - queue_data:/app/cloud/queue
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  queue_data:    # Named volume — SQLite databases persist across container restarts
