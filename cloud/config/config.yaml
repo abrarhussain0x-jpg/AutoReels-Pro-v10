@@ -8,22 +8,24 @@ niche: "movie"
 
 channels:
   - url: "https://www.youtube.com/@Plotpulse01/videos"
-    max_videos_per_run: 1
+    # Aggressive scan: fetch many videos per run for deep channel sweep
+    max_videos_per_run: 100
     download_quality: "bestvideo+bestaudio/best/bestvideo/best"
-    min_duration: 60
-    max_duration: 7200
-    max_age_days: 30
+    # allow short videos too when desired
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
     min_views: 0
     min_like_ratio: 0.0
     keywords_filter: []
-    exclude_keywords: ["live", "podcast", "interview"]
+    exclude_keywords: []
 
   - url: "https://www.youtube.com/@StoryLineMovie/videos"
     download_quality: "bestvideo+bestaudio/best/bestvideo/best"
-    max_videos_per_run: 1
-    min_duration: 60
-    max_duration: 7200
-    max_age_days: 30
+    max_videos_per_run: 100
+    min_duration: 0
+    max_duration: 86400
+    max_age_days: 365
     min_views: 0
     min_like_ratio: 0.0
 
