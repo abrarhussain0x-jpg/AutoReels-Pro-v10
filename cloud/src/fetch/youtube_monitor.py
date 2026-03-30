@@ -4,7 +4,7 @@ Finds new videos, filters by config rules, returns VideoMeta objects.
 No API key needed. Uses yt-dlp + cookies for auth.
 """
 from __future__ import annotations
-import json, logging, subprocess, time, shutil
+import json, logging, subprocess, time, shutil, random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -32,6 +32,10 @@ class YouTubeMonitor:
         self.channels = config.get("channels", [])
         self.cookies  = cookies_file
         self.max_age  = 30   # days
+        # Minimum delay between individual yt-dlp metadata calls (seconds)
+        self.min_delay_between_calls = float(config.get("ytdlp_min_delay", 1.5))
+        # Maximum metadata fetches per channel per run (conservative default)
+        self.max_metadata_per_channel = int(config.get("max_metadata_per_channel", 50))
         # Detect a JavaScript runtime (yt-dlp can use node or deno for JS).
         # Only pass the --js-runtimes flag when a runtime is available.
         js_rt = None
@@ -57,6 +61,8 @@ class YouTubeMonitor:
                 videos = self._scan_channel(ch)
                 all_videos.extend(videos)
                 log.info("[Monitor] %s → %d candidates", ch["url"], len(videos))
+                # Gentle pause between channels to reduce request burst
+                time.sleep(max(0.5, self.min_delay_between_calls / 2.0))
             except Exception as e:
                 log.warning("[Monitor] channel scan failed %s: %s", ch.get("url"), e)
         return all_videos
@@ -85,9 +91,11 @@ class YouTubeMonitor:
                 self._set_rate_limit_cooldown(60 * 60)
                 log.warning("[Monitor] detected yt-dlp rate-limit when scanning %s — entering cooldown", url)
             videos = []
-            for line in result.stdout.splitlines():
-                if not line.strip():
-                    continue
+            # Collect non-empty lines from flat-playlist output
+            lines = [l for l in result.stdout.splitlines() if l.strip()]
+            # Limit number of metadata fetches per channel to avoid bursts
+            lines = lines[: self.max_metadata_per_channel]
+            for line in lines:
                 try:
                     data = json.loads(line)
                 except Exception:
@@ -98,6 +106,12 @@ class YouTubeMonitor:
                     continue
                 # Do not filter by duration, keywords, or media formats
                 videos.append(meta)
+                # Small jittered sleep between metadata calls to reduce rate-limit risk
+                try:
+                    s = self.min_delay_between_calls + random.random() * self.min_delay_between_calls
+                    time.sleep(s)
+                except Exception:
+                    pass
             return videos
         except subprocess.TimeoutExpired:
             log.warning("[Monitor] yt-dlp timeout for %s", url)
