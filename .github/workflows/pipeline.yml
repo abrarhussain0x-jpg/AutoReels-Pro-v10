@@ -99,7 +99,7 @@ jobs:
 
       # ── 6.2 Write YouTube cookies from secret (optional) ──────────────────────
       - name: Write YouTube cookies
-        if: secrets.YT_COOKIES_JSON != ''
+        if: ${{ secrets.YT_COOKIES_JSON != '' }}
         run: |
           mkdir -p cloud/config
           printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.json
