@@ -130,6 +130,20 @@ jobs:
             echo "YT_COOKIES_JSON not set; skipping cookies write"
           fi
 
+      # ── 6.3 Validate yt-dlp + cookies (fail early with logs) ────────────────
+      - name: Validate yt-dlp and cookies
+        run: |
+          echo "Running yt-dlp health check"
+          python cloud/utils/yt_dlp_health_check.py || (
+            echo "Health check failed — printing any yt-dlp debug logs"
+            ls -la cloud/queue/tmp || true
+            for f in cloud/queue/tmp/*yt_dlp_debug_* 2>/dev/null; do
+              echo "---- $f ----"
+              tail -n 200 "$f" || true
+            done
+            exit 1
+          )
+
       # ── 7. Run pipeline ───────────────────────────────────────────────────────
       - name: Run AutoReels pipeline
         env:
