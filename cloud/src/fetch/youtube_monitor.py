@@ -4,7 +4,7 @@ Finds new videos, filters by config rules, returns VideoMeta objects.
 No API key needed. Uses yt-dlp + cookies for auth.
 """
 from __future__ import annotations
-import json, logging, subprocess, time
+import json, logging, subprocess, time, shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -32,6 +32,14 @@ class YouTubeMonitor:
         self.channels = config.get("channels", [])
         self.cookies  = cookies_file
         self.max_age  = 30   # days
+        # Detect a JavaScript runtime (yt-dlp can use node or deno for JS).
+        # Only pass the --js-runtimes flag when a runtime is available.
+        js_rt = None
+        for candidate in ("node", "deno"):
+            if shutil.which(candidate):
+                js_rt = candidate
+                break
+        self.js_runtime = js_rt
 
     def scan_all(self) -> List[VideoMeta]:
         """Scan all configured channels, return new candidates."""
@@ -53,8 +61,9 @@ class YouTubeMonitor:
             "yt-dlp", "--flat-playlist", "--dump-json",
             "--playlist-end", str(max_vids),
             "--no-warnings",
-            "--js-runtimes", "node",
         ]
+        if self.js_runtime:
+            cmd += ["--js-runtimes", self.js_runtime]
         if Path(self.cookies).exists():
             cmd += ["--cookies", self.cookies]
         cmd.append(url)
@@ -91,14 +100,20 @@ class YouTubeMonitor:
         # Try a sequence of yt-dlp invocations with fallbacks to handle
         # JS challenges, geo blocks, or unplayable formats. Return the
         # first successful metadata JSON parsed from stdout.
-        cmds = [
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--js-runtimes", "node", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", "--js-runtimes", "node", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", "--js-runtimes", "node", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", "--js-runtimes", "node", video_url],
+        base_variants = [
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
             # Last-resort: force generic extractor or increase verbosity
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", "--js-runtimes", "node", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
         ]
+        cmds = []
+        for v in base_variants:
+            if self.js_runtime:
+                cmds.append(v[:-1] + ["--js-runtimes", self.js_runtime, v[-1]])
+            else:
+                cmds.append(v)
         if Path(self.cookies).exists():
             # ensure cookies arg is appended to each variant
             cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
@@ -149,12 +164,18 @@ class YouTubeMonitor:
     def _has_media_formats(self, video_url: str) -> bool:
         """Return True if yt-dlp reports at least one audio/video format for the URL."""
         try:
-            cmds = [
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--js-runtimes", "node", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", "--js-runtimes", "node", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", "--js-runtimes", "node", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", "--js-runtimes", "node", video_url],
+            base_variants = [
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", video_url],
             ]
+            cmds = []
+            for v in base_variants:
+                if self.js_runtime:
+                    cmds.append(v[:-1] + ["--js-runtimes", self.js_runtime, v[-1]])
+                else:
+                    cmds.append(v)
             if Path(self.cookies).exists():
                 cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
             for cmd in cmds:
@@ -204,8 +225,9 @@ class YouTubeMonitor:
             "yt-dlp", "-f", quality,
             "--merge-output-format", "mp4",
             "-o", out_tpl, "--no-warnings",
-            "--js-runtimes", "node",
         ]
+        if self.js_runtime:
+            cmd += ["--js-runtimes", self.js_runtime]
         if Path(self.cookies).exists():
             cmd += ["--cookies", self.cookies]
         cmd.append(video.url)
@@ -220,7 +242,9 @@ class YouTubeMonitor:
                 for fallback in ["bestvideo+bestaudio/best", "best"]:
                     try:
                         fb_cmd = ["yt-dlp", "-f", fallback, "--merge-output-format", "mp4",
-                                  "-o", out_tpl, "--no-warnings", "--js-runtimes", "node"]
+                                  "-o", out_tpl, "--no-warnings"]
+                        if self.js_runtime:
+                            fb_cmd += ["--js-runtimes", self.js_runtime]
                         if Path(self.cookies).exists():
                             fb_cmd += ["--cookies", self.cookies]
                         fb_cmd.append(video.url)
