@@ -53,6 +53,7 @@ class YouTubeMonitor:
             "yt-dlp", "--flat-playlist", "--dump-json",
             "--playlist-end", str(max_vids),
             "--no-warnings",
+            "--js-runtimes", "node",
         ]
         if Path(self.cookies).exists():
             cmd += ["--cookies", self.cookies]
@@ -91,12 +92,12 @@ class YouTubeMonitor:
         # JS challenges, geo blocks, or unplayable formats. Return the
         # first successful metadata JSON parsed from stdout.
         cmds = [
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--js-runtimes", "node", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", "--js-runtimes", "node", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", "--js-runtimes", "node", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", "--js-runtimes", "node", video_url],
             # Last-resort: force generic extractor or increase verbosity
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", "--js-runtimes", "node", video_url],
         ]
         if Path(self.cookies).exists():
             # ensure cookies arg is appended to each variant
@@ -149,10 +150,10 @@ class YouTubeMonitor:
         """Return True if yt-dlp reports at least one audio/video format for the URL."""
         try:
             cmds = [
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--js-runtimes", "node", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", "--js-runtimes", "node", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", "--js-runtimes", "node", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", "--js-runtimes", "node", video_url],
             ]
             if Path(self.cookies).exists():
                 cmds = [c[:-1] + ["--cookies", self.cookies, c[-1]] for c in cmds]
@@ -203,6 +204,7 @@ class YouTubeMonitor:
             "yt-dlp", "-f", quality,
             "--merge-output-format", "mp4",
             "-o", out_tpl, "--no-warnings",
+            "--js-runtimes", "node",
         ]
         if Path(self.cookies).exists():
             cmd += ["--cookies", self.cookies]
@@ -218,7 +220,7 @@ class YouTubeMonitor:
                 for fallback in ["bestvideo+bestaudio/best", "best"]:
                     try:
                         fb_cmd = ["yt-dlp", "-f", fallback, "--merge-output-format", "mp4",
-                                  "-o", out_tpl, "--no-warnings"]
+                                  "-o", out_tpl, "--no-warnings", "--js-runtimes", "node"]
                         if Path(self.cookies).exists():
                             fb_cmd += ["--cookies", self.cookies]
                         fb_cmd.append(video.url)
