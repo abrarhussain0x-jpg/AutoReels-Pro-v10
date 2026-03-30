@@ -14,7 +14,7 @@ Usage:
 """
 from __future__ import annotations
 
-import argparse, logging, os, sys, time
+import argparse, logging, os, sys, time, random
 from pathlib import Path
 from src.utils.progress import PipelineProgress
 
@@ -244,7 +244,20 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
     Full pipeline: scan → decide → download → clip → caption → upload.
     Returns number of clips uploaded.
     """
-    daily_limit = int(cfg.get("daily_upload_limit", 5))
+    # Support optional randomized daily limit via config keys
+    # If both `daily_upload_limit_min` and `daily_upload_limit_max` are set,
+    # pick a random integer in the inclusive range each run.
+    if cfg.get("daily_upload_limit_min") is not None and cfg.get("daily_upload_limit_max") is not None:
+        try:
+            lo = int(cfg.get("daily_upload_limit_min"))
+            hi = int(cfg.get("daily_upload_limit_max"))
+            if hi < lo:
+                lo, hi = hi, lo
+            daily_limit = random.randint(lo, hi)
+        except Exception:
+            daily_limit = int(cfg.get("daily_upload_limit", 5))
+    else:
+        daily_limit = int(cfg.get("daily_upload_limit", 5))
     clips_per   = int(cfg.get("clips_per_video", 10))
     clip_length = int(cfg.get("clip_length_seconds", 55))
     niche       = cfg.get("niche", "movie")
