@@ -42,6 +42,50 @@ jobs:
       - name: Install Python deps
         run: pip install -r cloud/requirements.txt
 
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Configure yt-dlp JS runtime
+        run: |
+          mkdir -p ~/.config/yt-dlp
+          echo "--js-runtimes node" >> ~/.config/yt-dlp/config
+
+      - name: Write YouTube cookies (optional)
+        run: |
+          if [ -n "${{ secrets.YT_COOKIES_JSON }}" ]; then
+            mkdir -p cloud/config
+            printf '%s' "${{ secrets.YT_COOKIES_JSON }}" > cloud/config/cookies.tmp
+            first_char=$(head -c 1 cloud/config/cookies.tmp || true)
+            if [ "$first_char" = "{" ] || [ "$first_char" = "[" ]; then
+              if python cloud/utils/convert_cookies_json_to_netscape.py cloud/config/cookies.tmp cloud/config/cookies.txt; then
+                rm cloud/config/cookies.tmp
+              else
+                mv cloud/config/cookies.tmp cloud/config/cookies.txt
+              fi
+            else
+              mv cloud/config/cookies.tmp cloud/config/cookies.txt
+            fi
+          else
+            echo "YT_COOKIES_JSON not set; skipping cookies write"
+          fi
+
+      - name: Validate yt-dlp and cookies
+        run: |
+          echo "Running yt-dlp health check"
+          python cloud/utils/yt_dlp_health_check.py || (
+            echo "Health check failed — printing any yt-dlp debug logs"
+            ls -la cloud/queue/tmp || true
+            shopt -s nullglob
+            for f in cloud/queue/tmp/*yt_dlp_debug_*; do
+              echo "---- $f ----"
+              tail -n 200 "$f" || true
+            done
+            shopt -u nullglob
+            exit 1
+          )
+
       - name: Retry failed uploads
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
