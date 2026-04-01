@@ -146,6 +146,8 @@ python -m pip install -r cloud/requirements.txt
 python cloud/check_env.py
 ```
 
+`cloud/check_env.py` now fails fast (non-zero exit) if required tools are missing (`ffmpeg`, `yt-dlp`) or if `yt-dlp` cannot extract formats.
+
 If `cloud/check_env.py` reports a JS challenge, install Node.js (Windows example using Chocolatey):
 ```powershell
 choco install nodejs -y
@@ -179,6 +181,7 @@ python main.py --daemon            # continuous
 python main.py --dry-run           # no uploads
 python main.py --scan              # list candidates only
 python main.py --check             # token validation
+python main.py --preflight         # strict runtime readiness checks
 python main.py --pull-metrics      # pull engagement + retrain models
 
 # Reports (v9)
@@ -194,6 +197,18 @@ python main.py --retry-failed      # retry dead letter queue
 python main.py --thumbnail-report  # thumbnail A/B results
 python main.py --comment-sweep     # run comment bot
 python main.py --dashboard         # live dashboard
+```
+
+## Runtime Smoke Tests
+
+```bash
+cd cloud
+pytest tests/test_smoke_runtime.py -v -m smoke
+python validate_env.py --mode real-run
+python main.py --preflight
+
+# Full suite
+pytest tests/ -v
 ```
 
 ---

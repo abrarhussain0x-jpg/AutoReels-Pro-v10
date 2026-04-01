@@ -21,21 +21,32 @@ def main():
     print("=== AUTO-REELS ENV CHECK ===")
 
     tools = ["ffmpeg", "yt-dlp", "node"]
+    found = {}
     for t in tools:
         ok = which(t)
+        found[t] = ok
         print(f"{t}: {'FOUND' if ok else 'MISSING'}")
+
+    # ffmpeg and yt-dlp are required for core pipeline functionality.
+    required_missing = [t for t in ("ffmpeg", "yt-dlp") if not found[t]]
+    if required_missing:
+        print("Missing required tools:", ", ".join(required_missing))
+        print("Install missing tools before running AUTO-REELS.")
+        sys.exit(1)
 
     code, out, err = run(["yt-dlp", "--version"]) if which("yt-dlp") else (1, "", "yt-dlp missing")
     if code == 0:
         print("yt-dlp version:", out.splitlines()[0])
     else:
         print("yt-dlp check error:", err[:200])
+        sys.exit(1)
 
     code, out, err = run(["ffmpeg", "-version"]) if which("ffmpeg") else (1, "", "ffmpeg missing")
     if code == 0:
         print(out.splitlines()[0])
     else:
         print("ffmpeg check error:", err[:200])
+        sys.exit(1)
 
     # Test yt-dlp extraction on a known public video
     test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"

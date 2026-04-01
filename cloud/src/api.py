@@ -1,6 +1,6 @@
 """AutoReels Pro v10 — FastAPI Real-Time API"""
 
-from fastapi import FastAPI, HTTPException, WebSocket, Depends, BackgroundTasks, Header
+from fastapi import FastAPI, HTTPException, WebSocket, Depends, BackgroundTasks, Header, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
@@ -98,7 +98,7 @@ manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     logger.info("AutoReels API v10 starting...")
     try:
-        from src.database.schema import Base
+        from .database.schema import Base
         Base.metadata.create_all(bind=_engine)
         logger.info("Database schema ready")
     except Exception as e:
@@ -133,14 +133,14 @@ app.state.limiter = limiter
 
 @app.get("/health")
 @limiter.limit("1000/minute")
-async def health(request):
+async def health(request: Request):
     return {"status": "alive", "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.get("/ready")
 async def readiness(db: Session = Depends(get_db)):
     try:
-        from src.database.schema import Video
+        from .database.schema import Video
         db.query(Video).limit(1).all()
         return {"status": "ready", "database": "connected"}
     except Exception as e:
@@ -149,9 +149,9 @@ async def readiness(db: Session = Depends(get_db)):
 
 @app.get("/status")
 @limiter.limit("60/minute")
-async def status(request, db: Session = Depends(get_db)):
+async def status(request: Request, db: Session = Depends(get_db)):
     try:
-        from src.database.schema import Video, Upload
+        from .database.schema import Video, Upload
         return {
             "status": "operational",
             "timestamp": datetime.utcnow().isoformat(),
@@ -185,8 +185,8 @@ async def websocket_pipeline(websocket: WebSocket):
 
 @app.get("/api/v1/analytics/daily")
 @limiter.limit("30/minute")
-async def analytics_daily(request, days: int = 30, db: Session = Depends(get_db)):
-    from src.database.schema import Upload
+async def analytics_daily(request: Request, days: int = 30, db: Session = Depends(get_db)):
+    from .database.schema import Upload
     result = []
     for i in range(min(days, 365)):
         day = (datetime.utcnow() - timedelta(days=i)).date()
@@ -202,8 +202,8 @@ async def analytics_daily(request, days: int = 30, db: Session = Depends(get_db)
 
 @app.get("/api/v1/videos")
 @limiter.limit("60/minute")
-async def list_videos(request, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
-    from src.database.schema import Video
+async def list_videos(request: Request, limit: int = 20, offset: int = 0, db: Session = Depends(get_db)):
+    from .database.schema import Video
     videos = db.query(Video).order_by(Video.upload_timestamp.desc()).offset(offset).limit(limit).all()
     return [
         {
@@ -219,8 +219,8 @@ async def list_videos(request, limit: int = 20, offset: int = 0, db: Session = D
 
 @app.get("/api/v1/videos/{video_id}")
 @limiter.limit("120/minute")
-async def get_video(request, video_id: str, db: Session = Depends(get_db)):
-    from src.database.schema import Video
+async def get_video(request: Request, video_id: str, db: Session = Depends(get_db)):
+    from .database.schema import Video
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -243,14 +243,14 @@ async def reprocess_video(
     db: Session = Depends(get_db),
     _: None = Depends(require_admin),
 ):
-    from src.database.schema import Video
+    from .database.schema import Video
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
     video.status = "pending"
     db.commit()
     try:
-        from src.tasks import process_video
+        from .tasks import process_video
         background_tasks.add_task(process_video, video_id)
     except ImportError:
         pass
@@ -259,7 +259,7 @@ async def reprocess_video(
 
 @app.get("/api/v1/admin/queue")
 async def admin_queue(db: Session = Depends(get_db), _: None = Depends(require_admin)):
-    from src.database.schema import Video
+    from .database.schema import Video
     pending = db.query(Video).filter(Video.status.in_(["pending", "processing"])).all()
     return [{"id": v.id, "title": v.title, "status": v.status} for v in pending]
 

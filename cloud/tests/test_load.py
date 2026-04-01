@@ -1,5 +1,9 @@
 """AutoReels Pro v10 — Load Testing with Locust"""
 
+import pytest
+
+pytest.importorskip("locust")
+
 from locust import HttpUser, task, between, events
 import random
 import json

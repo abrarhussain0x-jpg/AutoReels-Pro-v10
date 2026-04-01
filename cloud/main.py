@@ -4,6 +4,7 @@ main.py v10.0 — AUTO-REELS PRO CLI Entrypoint.
 
 Commands:
   --check           Validate all platform tokens
+  --preflight       Validate runtime config/env before real runs
   --score           Score videos without processing
   --dry-run         Full pipeline, no actual uploads
   --once            One real pipeline run
@@ -145,6 +146,7 @@ def main() -> None:
     parser.add_argument("--dry-run",       action="store_true", help="No actual uploads")
     parser.add_argument("--scan",          action="store_true", help="Scan only, no processing")
     parser.add_argument("--check",         action="store_true", help="Validate tokens")
+    parser.add_argument("--preflight",     action="store_true", help="Validate runtime readiness")
     parser.add_argument("--score",         action="store_true", help="Score without uploading")
     parser.add_argument("--pull-metrics",  action="store_true", help="Pull engagement metrics")
 
@@ -264,7 +266,7 @@ def main() -> None:
         return
 
     if args.run:
-        import subprocess, sys
+        import subprocess
         subprocess.run([sys.executable, str(ROOT / "run_pipeline.py")] + sys.argv[2:])
         return
 
@@ -337,17 +339,27 @@ def main() -> None:
         _run_token_check(cfg)
         return
 
+    if args.preflight:
+        ok = _run_preflight(cfg, strict=True)
+        sys.exit(0 if ok else 2)
+
     if args.dashboard:
         _start_dashboard(cfg, queue_dir)
         return
 
     if args.once or args.dry_run:
-        import subprocess, sys
+        import subprocess
+        if not args.dry_run and not _run_preflight(cfg, strict=True):
+            log.error("Preflight checks failed. Fix config/env and retry.")
+            sys.exit(2)
         log.info("Starting single pipeline run (delegating to run_pipeline.py)...")
         cmd = [sys.executable, str(ROOT / "run_pipeline.py")]
         if args.dry_run:
             cmd.append("--dry-run")
-        subprocess.run(cmd + sys.argv[2:])
+        # Forward only arguments supported by run_pipeline.py.
+        if args.config != "config/config.yaml":
+            cmd.extend(["--config", args.config])
+        subprocess.run(cmd)
         return
 
     if args.daemon:
@@ -484,6 +496,71 @@ def _run_token_check(cfg: dict) -> None:
         print(f"  {platform.capitalize()}: {'⊘ disabled' if disabled else '✓ enabled'}")
 
 
+def _run_preflight(cfg: dict, strict: bool = False) -> bool:
+    """Validate config and environment readiness for execution."""
+    print("=== PREFLIGHT CHECK ===")
+
+    failures = []
+    warnings = []
+
+    channels = cfg.get("channels", [])
+    if not channels:
+        failures.append("No channels configured")
+
+    yt_cfg = cfg.get("youtube", {})
+    if not yt_cfg.get("cookies_file"):
+        warnings.append("youtube.cookies_file not set")
+
+    api_key = cfg.get("anthropic_api_key", "")
+    if not (api_key and not str(api_key).startswith("${") and len(str(api_key)) > 10):
+        warnings.append("ANTHROPIC_API_KEY missing (free-mode fallback will be used)")
+
+    fb_cfg = cfg.get("facebook", {})
+    fb_disabled = fb_cfg.get("disabled", False)
+    fb_accounts = fb_cfg.get("accounts", [])
+    if not fb_disabled:
+        if not fb_accounts:
+            failures.append("facebook.accounts missing while facebook is enabled")
+        else:
+            acc = fb_accounts[0]
+            page_id = str(acc.get("page_id", "")).strip()
+            token = str(acc.get("access_token", "")).strip()
+            if not page_id:
+                failures.append("FB_PAGE_ID is empty")
+            if not token:
+                failures.append("FB_PAGE_ACCESS_TOKEN is empty")
+
+    if strict:
+        if failures:
+            print("Result: FAIL")
+            for item in failures:
+                print(f"  - {item}")
+            if warnings:
+                print("Warnings:")
+                for item in warnings:
+                    print(f"  - {item}")
+            return False
+        print("Result: OK")
+        if warnings:
+            print("Warnings:")
+            for item in warnings:
+                print(f"  - {item}")
+        return True
+
+    if failures:
+        print("Result: FAIL")
+        for item in failures:
+            print(f"  - {item}")
+        return False
+
+    print("Result: OK")
+    if warnings:
+        print("Warnings:")
+        for item in warnings:
+            print(f"  - {item}")
+    return True
+
+
 def _run_scan(cfg: dict, queue_dir: Path) -> None:
     """Scan YouTube channels and list candidates without processing."""
     channels = cfg.get("channels", [])
@@ -550,3 +627,4 @@ def _primary_platform(cfg: dict) -> str:
 
 if __name__ == "__main__":
     main()
+

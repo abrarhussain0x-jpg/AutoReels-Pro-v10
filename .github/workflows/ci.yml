@@ -7,10 +7,46 @@ on:
     branches: [main]
 
 jobs:
+  smoke:
+    name: Run Smoke Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: cloud/requirements.txt
+
+      - name: Install system deps
+        run: sudo apt-get install -y ffmpeg libsm6 libxext6
+
+      - name: Install Python deps
+        run: pip install -r cloud/requirements.txt
+
+      - name: Run smoke tests + preflight
+        env:
+          DATABASE_URL: postgresql://autoreels:test_password@localhost:5432/autoreels_test
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ant-test-key-for-ci' }}
+          FB_PAGE_ID: "000000000"
+          FB_PAGE_ACCESS_TOKEN: "test_token"
+          ENVIRONMENT: testing
+        run: |
+          cd cloud
+          pytest tests/ -v -m smoke --tb=short
+          python validate_env.py --mode real-run
+          python main.py --preflight
+
   test:
-    name: Run Tests
+    name: Run Full Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: smoke
 
     services:
       postgres:
@@ -44,7 +80,7 @@ jobs:
       - name: Install Python deps
         run: pip install -r cloud/requirements.txt
 
-      - name: Run tests
+      - name: Run full test suite
         env:
           DATABASE_URL: postgresql://autoreels:test_password@localhost:5432/autoreels_test
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ant-test-key-for-ci' }}

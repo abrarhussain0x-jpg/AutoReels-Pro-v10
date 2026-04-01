@@ -53,7 +53,7 @@ else:
 _engine = create_engine(_db_url, **_engine_kwargs)
 
 # Auto-create tables if they don't exist (safe no-op if already present)
-from src.database.schema import Base as _Base
+from .database.schema import Base as _Base
 _Base.metadata.create_all(_engine)
 
 _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
@@ -102,7 +102,7 @@ class HealthResponse(BaseModel):
 @app.get("/api/health", response_model=HealthResponse)
 async def health(db: Session = Depends(get_db)):
     try:
-        from src.database.schema import Video
+        from .database.schema import Video
         db.query(Video).limit(1).all()
         db_status = "connected"
     except Exception as e:
@@ -132,7 +132,7 @@ async def readiness():
 @app.get("/api/status")
 async def status(db: Session = Depends(get_db)):
     try:
-        from src.database.schema import Video, Upload
+        from .database.schema import Video, Upload
         return {
             "status": "operational",
             "timestamp": datetime.utcnow().isoformat(),
@@ -154,7 +154,7 @@ async def status(db: Session = Depends(get_db)):
 
 @app.post("/api/v1/videos", response_model=VideoResponse)
 async def process_video(req: VideoRequest, db: Session = Depends(get_db)):
-    from src.database.schema import Video
+    from .database.schema import Video
     try:
         youtube_id = req.youtube_url.split("v=")[-1].split("&")[0] if "v=" in req.youtube_url else req.youtube_url
 
@@ -180,7 +180,7 @@ async def process_video(req: VideoRequest, db: Session = Depends(get_db)):
         db.refresh(video)
 
         try:
-            from src.tasks import fetch_youtube_video
+            from .tasks import fetch_youtube_video
             fetch_youtube_video.delay(req.youtube_url)
         except Exception:
             pass  # Celery optional
@@ -200,7 +200,7 @@ async def process_video(req: VideoRequest, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/videos/{video_id}", response_model=VideoResponse)
 async def get_video(video_id: str, db: Session = Depends(get_db)):
-    from src.database.schema import Video
+    from .database.schema import Video
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
@@ -218,7 +218,7 @@ async def get_video(video_id: str, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/analytics/daily")
 async def analytics_daily(days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)):
-    from src.database.schema import Upload
+    from .database.schema import Upload
     result = []
     for i in range(days):
         day = (datetime.utcnow() - timedelta(days=i)).date()
