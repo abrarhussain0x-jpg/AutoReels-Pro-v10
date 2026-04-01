@@ -232,12 +232,13 @@ class YouTubeMonitor:
         log.info("[Monitor] _get_metadata START for: %s", video_url[:80])
         
         # Try a sequence of yt-dlp invocations with fallbacks
+        # YouTube bot-check bypass: try different player clients and extraction methods
         base_variants = [
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=web_creator", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=android", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=tv_embedded", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
         ]
         
         # Build all variants with JS runtime + cookies combinations
@@ -245,7 +246,7 @@ class YouTubeMonitor:
         for base_cmd in base_variants:
             all_cmds.extend(self._build_cmd_variants(base_cmd))
         
-        log.info("[Monitor] _get_metadata: prepared %d command variants", len(all_cmds))
+        log.info("[Monitor] _get_metadata: prepared %d command variants (player client bypass)", len(all_cmds))
         
         attempt = 0
         for cmd in all_cmds:
@@ -283,6 +284,12 @@ class YouTubeMonitor:
                     
                     if "challenge solving failed" in stderr or "Only images are available" in stderr:
                         log.debug("[Monitor] JS challenge or images-only for %s at attempt %d", video_url, attempt)
+                    
+                    # Add backoff delay between failed attempts (helps reduce bot detection)
+                    try:
+                        time.sleep(1.5)
+                    except Exception:
+                        pass
                     continue
                 
                 # Success: parse JSON
@@ -305,13 +312,25 @@ class YouTubeMonitor:
                     return meta
                 except Exception as e:
                     log.info("[Monitor]   → attempt %d JSON_PARSE_ERROR: %s", attempt, str(e)[:100])
+                    try:
+                        time.sleep(0.5)  # Smaller delay for JSON errors
+                    except Exception:
+                        pass
                     continue
                     
             except subprocess.TimeoutExpired:
                 log.info("[Monitor]   → attempt %d TIMEOUT (60s) for %s", attempt, video_url)
+                try:
+                    time.sleep(1.5)  # Backoff on timeout
+                except Exception:
+                    pass
                 continue
             except Exception as e:
                 log.info("[Monitor]   → attempt %d ERROR: %s for %s", attempt, type(e).__name__, video_url)
+                try:
+                    time.sleep(0.5)
+                except Exception:
+                    pass
                 continue
         
         log.info("[Monitor] _get_metadata END FAILED: all %d metadata attempts failed for %s", len(all_cmds), video_url)
