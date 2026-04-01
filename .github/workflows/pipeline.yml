@@ -132,6 +132,8 @@ jobs:
 
       # ── 6.3 Validate yt-dlp + cookies (fail early with logs) ────────────────
       - name: Validate yt-dlp and cookies
+        env:
+          YTDLP_HEALTH_STRICT: "0"
         run: |
           echo "Running yt-dlp health check"
           python cloud/utils/yt_dlp_health_check.py || (

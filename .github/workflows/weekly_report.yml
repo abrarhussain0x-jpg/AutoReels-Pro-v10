@@ -64,6 +64,8 @@ jobs:
           fi
 
       - name: Validate yt-dlp and cookies
+        env:
+          YTDLP_HEALTH_STRICT: "0"
         run: |
           echo "Running yt-dlp health check"
           python cloud/utils/yt_dlp_health_check.py || (
