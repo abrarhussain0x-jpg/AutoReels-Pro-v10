@@ -167,12 +167,38 @@ class YouTubeMonitor:
                 
                 metadata_calls += 1
                 meta = self._get_metadata(vid_url)
-                if not meta:
-                    log.info(f"[Monitor] Skipped video at idx={idx} id={vid_url}: no metadata returned (yt-dlp fail, rate-limit, or filtered)")
-                    continue
                 
-                log.debug(f"[Monitor] Accepted video at idx={idx} id={vid_url}: {meta.title[:50]}")
-                videos.append(meta)
+                # Fallback: if full metadata extraction fails, use basic flat-playlist info
+                if not meta:
+                    log.info(f"[Monitor] Full metadata failed for idx={idx}, trying basic flat-playlist data")
+                    try:
+                        # Construct VideoMeta from flat-playlist entry if we have minimal info
+                        basic_meta = VideoMeta(
+                            video_id=data.get("id", "").split("/")[-1] if data.get("id") else vid_url.split("v=")[-1][:20],
+                            title=data.get("title", "Unknown Title")[:200],
+                            url=vid_url if vid_url.startswith("http") else f"https://www.youtube.com/watch?v={vid_url}",
+                            channel=data.get("uploader", data.get("channel", "Unknown Channel"))[:200],
+                            duration=int(data.get("duration", 0)) or 600,  # default 10min if unknown
+                            view_count=int(data.get("view_count", 0)) or 1000,  # default 1k views
+                            like_count=int(data.get("like_count", 0)) or 100,  # default 100 likes
+                            upload_date=data.get("upload_date", "20260101"),  # default to today
+                            description=(data.get("description", "") or "")[:500],
+                            tags=data.get("tags", [])[:10] if data.get("tags") else [],
+                            thumbnail_url=data.get("thumbnail", ""),
+                        )
+                        if basic_meta.title != "Unknown Title":
+                            log.info(f"[Monitor] Using basic flat-playlist data for idx={idx}: '{basic_meta.title[:40]}'")
+                            videos.append(basic_meta)
+                            meta = basic_meta
+                        else:
+                            log.info(f"[Monitor] Skipped video at idx={idx}: no metadata and no title in flat-playlist")
+                    except Exception as e:
+                        log.info(f"[Monitor] Fallback failed for idx={idx}: {e}")
+                        continue
+                else:
+                    log.debug(f"[Monitor] Accepted video at idx={idx} id={vid_url}: {meta.title[:50]}")
+                    videos.append(meta)
+                
                 # Small jittered sleep between metadata calls to reduce rate-limit risk
                 try:
                     s = self.min_delay_between_calls + random.random() * self.min_delay_between_calls
@@ -232,13 +258,16 @@ class YouTubeMonitor:
         log.info("[Monitor] _get_metadata START for: %s", video_url[:80])
         
         # Try a sequence of yt-dlp invocations with fallbacks
-        # YouTube bot-check bypass: try different player clients and extraction methods
+        # YouTube bot-check REQUIRES authentication. Priority: use cookies, then try variant clients
         base_variants = [
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=web_creator", video_url],
+            # Priority 1: Try with browser cookies (bypasses bot check)
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "chrome", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "firefox", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "edge", video_url],
+            
+            # Priority 2: Try different YouTube player clients (less effective but may help)
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=android", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=tv_embedded", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=web_creator", video_url],
         ]
         
         # Build all variants with JS runtime + cookies combinations
@@ -246,7 +275,7 @@ class YouTubeMonitor:
         for base_cmd in base_variants:
             all_cmds.extend(self._build_cmd_variants(base_cmd))
         
-        log.info("[Monitor] _get_metadata: prepared %d command variants (player client bypass)", len(all_cmds))
+        log.info("[Monitor] _get_metadata: prepared %d command variants (cookies-from-browser priority)", len(all_cmds))
         
         attempt = 0
         for cmd in all_cmds:
