@@ -388,13 +388,20 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
         arc_plan = arc.plan(video.video_id, video.title, len(clip_times))
 
         # 6. Generate content for all clips
-        batch = gen.generate_batch(
-            video_id=video.video_id,
-            video_title=video.title,
-            n_clips=len(clip_times),
-            platforms=["facebook"],
-            arc_plan=arc_plan,
-        )
+        # Fix Bug #4: Wrap batch generation in error handling
+        try:
+            batch = gen.generate_batch(
+                video_id=video.video_id,
+                video_title=video.title,
+                n_clips=len(clip_times),
+                platforms=["facebook"],
+                arc_plan=arc_plan,
+            )
+        except Exception as e:
+            log.error("[Pipeline] Batch generation failed: %s", str(e)[:200])
+            aq.mark_failed(video.video_id, f"content gen: {str(e)[:100]}")
+            src_path.unlink(missing_ok=True)
+            continue
 
         # 7. Process + upload clips
         clips_done = 0
@@ -406,7 +413,9 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
                 break
 
             content = batch.get(i, "facebook")
-            hook    = ho.get_best_hook("facebook", niche, result.angle).phrase
+            # Fix Bug #2: Add None check for hook selector
+            hook_result = ho.get_best_hook("facebook", niche, result.angle) if ho else None
+            hook = hook_result.phrase if hook_result else "WATCH THIS 🔥"
             clip_time["hook_text"] = hook
 
             # Process clip
@@ -427,7 +436,15 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
             base_caption = content.caption if content else f"Part {i} 🎬 Follow {channel}!"
             tags = content.hashtags if content else ["movierecap", "viral"]
 
-            hook_phrase = ho.get_best_hook("facebook", niche, result.angle).phrase
+            hook_phrase = hook  # Use the safe hook from earlier (Bug #2 fix)
+
+            # Fix Bug #1: Define optimized with safe default before conditional
+            optimized = type('OptimizationResult', (), {
+                'caption': base_caption,
+                'first_comment': f"🔥 Part {i} is amazing! Follow {channel}!",
+                'hook_overlay': hook,
+                'predicted_reach_multiplier': 1.0
+            })()
 
             # Use Caption A/B tester for best-performing formula
             if cap_ab:
@@ -464,10 +481,16 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
             thumb_path = None
             if tgen:
                 frame_path = out_dir / f"{video.video_id}_clip{i:02d}_frame.jpg"
-                pro.extract_thumbnail(clip_path, 5.0, frame_path)
-                thumb_path = out_dir / f"{video.video_id}_clip{i:02d}_thumb.jpg"
-                tgen.generate(frame_path, ho.get_best_hook("facebook", niche,
-                              result.angle).phrase, video.title, i, thumb_path)
+                # Fix Bug #3: Check thumbnail extraction return value
+                if not pro.extract_thumbnail(clip_path, 5.0, frame_path):
+                    log.warning("[Pipeline] Thumbnail extraction failed for clip %d, skipping tgen", i)
+                else:
+                    thumb_path = out_dir / f"{video.video_id}_clip{i:02d}_thumb.jpg"
+                    try:
+                        tgen.generate(frame_path, hook, video.title, i, thumb_path)
+                    except Exception as e:
+                        log.warning("[Pipeline] Thumbnail generation failed: %s", e)
+                        thumb_path = None
 
             if DRY_RUN:
                 log.info("[DRY-RUN] would upload clip %d: %s", i, clip_path.name)
@@ -477,13 +500,20 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
                 continue
 
             # Upload to ALL configured platforms via dispatcher
+            # Fix Bug #4: Wrap uploader in proper error handling
             if disp and disp.uploaders:
-                summary = disp.upload(
-                    clip_path=clip_path, caption=caption,
-                    video_id=video.video_id, clip_num=i,
-                    thumbnail_path=thumb_path,
-                    gap_seconds=int(cfg.get("clip_upload_gap_seconds", 45)),
-                )
+                try:
+                    summary = disp.upload(
+                        clip_path=clip_path, caption=caption,
+                        video_id=video.video_id, clip_num=i,
+                        thumbnail_path=thumb_path,
+                        gap_seconds=int(cfg.get("clip_upload_gap_seconds", 45)),
+                    )
+                except Exception as e:
+                    log.error("[Pipeline] Upload failed for clip %d: %s", i, str(e)[:100])
+                    if prog:
+                        prog.upload_failed(i)
+                    continue
                 if summary.any_success:
                     # Register in velocity tracker for each platform
                     for pres in summary.results:
@@ -532,8 +562,13 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
                     log.warning("❌ clip %d failed on all platforms", i)
                     if prog:
                         prog.upload_failed(i)
+            # Fix Bug #5: Properly handle missing uploaders instead of breaking loop
             else:
-                log.warning("No uploaders configured — add FB_PAGE_ID + FB_PAGE_ACCESS_TOKEN to .env")
+                log.error("[Pipeline] No uploaders configured, marking all remaining clips as failed")
+                log.error("[Pipeline] Please set FB_PAGE_ID + FB_PAGE_ACCESS_TOKEN in .env and restart")
+                if clips_done == 0:
+                    # If no clips were uploaded, mark video as failed
+                    aq.mark_failed(video.video_id, "no uploaders configured")
                 break
 
         # 8. Cleanup
@@ -586,7 +621,29 @@ def main():
         os.environ["AUTOREELS_DRY_RUN"] = "1"
 
     from src.config_manager import ConfigManager
-    cfg       = ConfigManager(ROOT / args.config).config
+    
+    # Fix Bug #8: Add configuration validation with helpful error messages
+    config_path = ROOT / args.config
+    if not config_path.exists():
+        log.error("❌ Config file not found: %s", config_path)
+        log.error("   Expected location: %s", config_path)
+        log.error("   To create config: cp %s %s && edit it", 
+                  config_path.parent / "config.yaml.example",
+                  config_path)
+        sys.exit(1)
+    
+    try:
+        cfg = ConfigManager(config_path).config
+    except Exception as e:
+        log.error("❌ Failed to load config from %s: %s", config_path, e)
+        sys.exit(1)
+    
+    # Validate critical thresholds
+    process_t = float(cfg.get("process_threshold", 0.35))
+    defer_t = float(cfg.get("defer_threshold", 0.20))
+    if process_t >= defer_t:
+        log.warning("[Pipeline] process_threshold (%.2f) should be < defer_threshold (%.2f)", process_t, defer_t)
+    
     queue_dir = ROOT / "queue"
     queue_dir.mkdir(exist_ok=True)
 

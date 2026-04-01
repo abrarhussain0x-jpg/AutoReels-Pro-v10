@@ -70,11 +70,19 @@ class VideoProcessor:
         self._check_ffmpeg()
 
     def _check_ffmpeg(self):
-        try:
-            subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
-            log.info("[Processor] ffmpeg OK")
-        except FileNotFoundError:
-            log.error("[Processor] ffmpeg NOT FOUND. Install: sudo apt install ffmpeg")
+        """Validate ffmpeg and ffprobe are installed. Fail fast if missing."""
+        for tool in ["ffmpeg", "ffprobe"]:
+            try:
+                subprocess.run([tool, "-version"], capture_output=True, timeout=5)
+                log.info("[Processor] %s OK", tool)
+            except FileNotFoundError:
+                log.error("[Processor] CRITICAL: %s NOT FOUND", tool)
+                raise RuntimeError(
+                    f"❌ {tool} is required but not installed.\n"
+                    f"  Install with: sudo apt install ffmpeg\n"
+                    f"  Or on macOS: brew install ffmpeg\n"
+                    f"  Or on Windows: Download from ffmpeg.org"
+                )
 
     def process_clip(self, job: ClipJob) -> ProcessResult:
         """Cut + resize + overlay + encode a single clip."""
@@ -269,4 +277,15 @@ class VideoProcessor:
             if end - start < 20:
                 continue
             clips.append({"start_s": round(start, 2), "duration_s": round(end - start, 2)})
+        
+        # Fix Bug #9: Handle empty clip list with fallback
+        if not clips:
+            log.warning("[Processor] No valid clip times for duration %.0fs (usable=%.0fs, all < 20s threshold)", 
+                       duration, usable)
+            # Return a single clip from the middle of usable window if it's long enough
+            if usable > clip_length + 40:
+                mid_start = start_skip + (usable - clip_length) / 2
+                clips.append({"start_s": round(mid_start, 2), "duration_s": clip_length})
+                log.info("[Processor] Using fallback clip at %.1fs", mid_start)
+        
         return clips

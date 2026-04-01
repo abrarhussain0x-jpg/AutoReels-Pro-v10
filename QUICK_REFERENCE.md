@@ -1,5 +1,14 @@
 # AutoReels Pro v10 — Quick Reference Guide
 
+## ⚠️ Latest Fix: YouTube Monitor v10.0
+**Status:** ✅ FIXED (April 1, 2026)
+- Fixed critical metadata extraction bug (0 videos bug)
+- Metadata counter now tracks correctly
+- Command building logic completely rewritten
+- See [YOUTUBE_MONITOR_FIX.md](YOUTUBE_MONITOR_FIX.md) for details
+
+---
+
 ## 🎯 New Features Overview
 
 ### Phase 1: Enhanced Deployment (Done)
