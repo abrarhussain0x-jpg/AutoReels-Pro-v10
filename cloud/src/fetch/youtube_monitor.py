@@ -189,14 +189,17 @@ class YouTubeMonitor:
 
     def _get_metadata(self, video_url: str) -> Optional[VideoMeta]:
         if not video_url:
+            log.debug("[Monitor] _get_metadata: empty URL")
             return None
         if self._is_rate_limited():
-            log.debug("[Monitor] skipping metadata fetch for %s due to yt-dlp cooldown", video_url)
+            log.info("[Monitor] skipping metadata fetch for %s due to yt-dlp cooldown", video_url)
             return None
         
         # Normalize video URL
         if not video_url.startswith("http"):
             video_url = f"https://www.youtube.com/watch?v={video_url}"
+        
+        log.info("[Monitor] _get_metadata START for: %s", video_url[:80])
         
         # Try a sequence of yt-dlp invocations with fallbacks
         base_variants = [
@@ -204,7 +207,7 @@ class YouTubeMonitor:
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
+            ["yt-dlp", "--dump-json", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
         ]
         
         # Build all variants with JS runtime + cookies combinations
@@ -212,11 +215,14 @@ class YouTubeMonitor:
         for base_cmd in base_variants:
             all_cmds.extend(self._build_cmd_variants(base_cmd))
         
+        log.info("[Monitor] _get_metadata: prepared %d command variants", len(all_cmds))
+        
         attempt = 0
         for cmd in all_cmds:
             attempt += 1
             try:
-                log.debug("[Monitor] metadata attempt %d/%d for %s: %s", attempt, len(all_cmds), video_url, " ".join(cmd[:5] + ["..."]))
+                # Log at INFO level so we can see what's happening
+                log.info("[Monitor] metadata attempt %d/%d for %s: %s", attempt, len(all_cmds), video_url, " ".join(cmd[:4] + ["..."]))
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 stderr = (r.stderr or "")
                 
@@ -227,6 +233,8 @@ class YouTubeMonitor:
                     return None
                 
                 if r.returncode != 0 or not r.stdout:
+                    log.info("[Monitor]   → attempt %d FAILED: code=%d, stdout_len=%d, stderr=(first 200 chars) %s", 
+                             attempt, r.returncode, len(r.stdout or ""), stderr[:200])
                     # Save debug trace
                     if attempt == 1 or "rate-limit" in stderr.lower():
                         try:
@@ -263,20 +271,20 @@ class YouTubeMonitor:
                         tags=data.get("tags", [])[:10],
                         thumbnail_url=data.get("thumbnail", ""),
                     )
-                    log.debug("[Monitor] metadata SUCCESS for %s (attempt %d): %s", video_url, attempt, meta.title[:40])
+                    log.info("[Monitor]   → attempt %d SUCCESS: got title='%s'", attempt, meta.title[:40])
                     return meta
                 except Exception as e:
-                    log.debug("[Monitor] JSON parse error attempt %d for %s: %s", attempt, video_url, e)
+                    log.info("[Monitor]   → attempt %d JSON_PARSE_ERROR: %s", attempt, str(e)[:100])
                     continue
                     
             except subprocess.TimeoutExpired:
-                log.debug("[Monitor] yt-dlp timeout attempt %d for %s", attempt, video_url)
+                log.info("[Monitor]   → attempt %d TIMEOUT (60s) for %s", attempt, video_url)
                 continue
             except Exception as e:
-                log.debug("[Monitor] metadata attempt %d error for %s: %s", attempt, video_url, e)
+                log.info("[Monitor]   → attempt %d ERROR: %s for %s", attempt, type(e).__name__, video_url)
                 continue
         
-        log.debug("[Monitor] all %d metadata attempts failed for %s", len(all_cmds), video_url)
+        log.info("[Monitor] _get_metadata END FAILED: all %d metadata attempts failed for %s", len(all_cmds), video_url)
         return None
 
     def _set_rate_limit_cooldown(self, seconds: int = 3600) -> None:
