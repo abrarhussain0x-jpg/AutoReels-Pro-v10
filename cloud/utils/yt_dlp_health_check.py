@@ -8,8 +8,17 @@ TEST_URL = "https://www.youtube.com/watch?v=8viqd3M7Kek"
 
 
 def _is_strict_mode() -> bool:
-    # Default strict locally; allow relaxed mode in CI with YTDLP_HEALTH_STRICT=0.
-    return os.getenv("YTDLP_HEALTH_STRICT", "1").strip() not in {"0", "false", "False"}
+    # Honor explicit override first.
+    explicit = os.getenv("YTDLP_HEALTH_STRICT")
+    if explicit is not None:
+        return explicit.strip() not in {"0", "false", "False"}
+
+    # In GitHub Actions, default to relaxed mode to avoid flaky anti-bot failures.
+    if os.getenv("GITHUB_ACTIONS", "").lower() == "true":
+        return False
+
+    # Local default remains strict.
+    return True
 
 
 def _known_platform_block(stderr_or_stdout: str) -> bool:
