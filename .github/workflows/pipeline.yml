@@ -94,7 +94,7 @@ jobs:
 
       # ── 6.1 Install Node.js for yt-dlp JS/EJS solving ─────────────────────────
       - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
 
@@ -217,7 +217,10 @@ jobs:
             cloud/queue/jobs.db
           key: autoreels-sqlite-dbs-v2
 
-      # ── 9. Upload queue report as artifact ───────────────────────────────────
+        if: always()
+        run: mkdir -p cloud/logs
+
+      # ── 10. Upload queue report as artifact ──────────────────────────────────
       - name: Upload run report
         if: always()
         uses: actions/upload-artifact@v4
@@ -229,7 +232,7 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      # ── 10. Notify on failure ─────────────────────────────────────────────────
+      # ── 11. Notify on failure ─────────────────────────────────────────────────
       - name: Notify on failure
         if: failure()
         run: |
