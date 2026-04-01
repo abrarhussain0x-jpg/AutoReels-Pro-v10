@@ -1,26 +1,76 @@
-"""AutoReels Pro v10 — Celery Async Tasks"""
+"""AutoReels Pro v10 — Celery Async Tasks (Optional)
 
-from celery import Celery, group, chain, chord
-from celery.exceptions import MaxRetriesExceededError
+Note: Celery is optional. Production pipeline uses native executor.
+This module provides async task orchestration when Celery/Redis available.
+"""
+
 from datetime import datetime, timedelta
 import logging
 import os
 
+# Gracefully handle missing Celery dependency
+try:
+    from celery import Celery, group, chain, chord  # type: ignore
+    from celery.exceptions import MaxRetriesExceededError  # type: ignore
+    CELERY_AVAILABLE = True
+except ImportError:
+    CELERY_AVAILABLE = False
+    # Provide stub for when Celery not installed
+    class Celery:
+        def __init__(self, *args, **kwargs):
+            pass
+        def conf(self):
+            return self
+        def update(self, **kwargs):
+            pass
+        @property
+        def conf(self):
+            class Conf:
+                def update(self, **kwargs):
+                    pass
+            return Conf()
+        def task(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+
+    class MaxRetriesExceededError(Exception):
+        pass
+    
+    def group(*args, **kwargs):
+        return None
+    
+    def chain(*args, **kwargs):
+        return None
+    
+    def chord(*args, **kwargs):
+        return None
+
 app = Celery('autoreels')
 
 # Load config from environment
-app.conf.update(
-    broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
-    enable_utc=True,
-    task_acks_late=True,
-    worker_prefetch_multiplier=1,
-    task_compression='gzip',
-)
+if CELERY_AVAILABLE:
+    app.conf.update(
+        broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        task_serializer='json',
+        accept_content=['json'],
+        result_serializer='json',
+        timezone='UTC',
+        enable_utc=True,
+        task_acks_late=True,
+        worker_prefetch_multiplier=1,
+        task_compression='gzip',
+    )
+else:
+    # Stub config when Celery not available
+    try:
+        app.conf.update(
+            broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+            result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        )
+    except:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -208,23 +258,27 @@ def daily_generate_weekly_report():
 
 # ── BEAT SCHEDULE ───────────────────────────────
 
-from celery.schedules import crontab
-
-app.conf.beat_schedule = {
-    'retry-failed-uploads-hourly': {
-        'task': 'src.tasks.hourly_retry_failed_uploads',
-        'schedule': crontab(minute=0),  # Every hour
-    },
-    'reset-account-limits-daily': {
-        'task': 'src.tasks.daily_reset_account_limits',
-        'schedule': crontab(hour=0, minute=0),  # Midnight UTC
-    },
-    'optimize-schedules-daily': {
-        'task': 'src.tasks.daily_optimize_schedules',
-        'schedule': crontab(hour=2, minute=0),  # 2 AM UTC
-    },
-    'weekly-report': {
-        'task': 'src.tasks.daily_generate_weekly_report',
-        'schedule': crontab(day_of_week=1, hour=9, minute=0),  # Monday 9 AM UTC
-    },
-}
+if CELERY_AVAILABLE:
+    from celery.schedules import crontab  # type: ignore
+    
+    app.conf.beat_schedule = {
+        'retry-failed-uploads-hourly': {
+            'task': 'src.tasks.hourly_retry_failed_uploads',
+            'schedule': crontab(minute=0),  # Every hour
+        },
+        'reset-account-limits-daily': {
+            'task': 'src.tasks.daily_reset_account_limits',
+            'schedule': crontab(hour=0, minute=0),  # Midnight UTC
+        },
+        'optimize-schedules-daily': {
+            'task': 'src.tasks.daily_optimize_schedules',
+            'schedule': crontab(hour=2, minute=0),  # 2 AM UTC
+        },
+        'weekly-report': {
+            'task': 'src.tasks.daily_generate_weekly_report',
+            'schedule': crontab(day_of_week=1, hour=9, minute=0),  # Monday 9 AM UTC
+        },
+    }
+else:
+    # Stub schedule when Celery not available
+    app.conf.beat_schedule = {}
