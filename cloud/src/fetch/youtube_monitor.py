@@ -172,28 +172,58 @@ class YouTubeMonitor:
                 if not meta:
                     log.info(f"[Monitor] Full metadata failed for idx={idx}, trying basic flat-playlist data")
                     try:
-                        # Construct VideoMeta from flat-playlist entry if we have minimal info
+                        # Safely extract video ID
+                        vid_id = data.get("id", "")
+                        if isinstance(vid_id, str):
+                            vid_id = vid_id.split("/")[-1] if "/" in vid_id else vid_id
+                        if not vid_id:
+                            vid_id = vid_url.split("v=")[-1].split("&")[0] if "v=" in vid_url else vid_url[-20:]
+                        
+                        # Safely extract title (required field)
+                        title = data.get("title", "")
+                        if not isinstance(title, str):
+                            title = str(title) if title else "Unknown"
+                        if not title or title == "Unknown":
+                            log.info(f"[Monitor] Skipped video at idx={idx}: no title in flat-playlist")
+                            continue
+                        
+                        # Safely extract other fields with type checking
+                        def safe_str(val, default="", max_len=None):
+                            s = str(val) if val else default
+                            return s[:max_len] if max_len else s
+                        
+                        def safe_int(val, default=0):
+                            try:
+                                return int(val) if val else default
+                            except (ValueError, TypeError):
+                                return default
+                        
+                        def safe_list(val, default=None):
+                            if isinstance(val, (list, tuple)):
+                                return list(val)
+                            return default or []
+                        
+                        # Construct VideoMeta with type-safe extraction
                         basic_meta = VideoMeta(
-                            video_id=data.get("id", "").split("/")[-1] if data.get("id") else vid_url.split("v=")[-1][:20],
-                            title=data.get("title", "Unknown Title")[:200],
-                            url=vid_url if vid_url.startswith("http") else f"https://www.youtube.com/watch?v={vid_url}",
-                            channel=data.get("uploader", data.get("channel", "Unknown Channel"))[:200],
-                            duration=int(data.get("duration", 0)) or 600,  # default 10min if unknown
-                            view_count=int(data.get("view_count", 0)) or 1000,  # default 1k views
-                            like_count=int(data.get("like_count", 0)) or 100,  # default 100 likes
-                            upload_date=data.get("upload_date", "20260101"),  # default to today
-                            description=(data.get("description", "") or "")[:500],
-                            tags=data.get("tags", [])[:10] if data.get("tags") else [],
-                            thumbnail_url=data.get("thumbnail", ""),
+                            video_id=safe_str(vid_id, "unknown", 20),
+                            title=safe_str(title, "Unknown", 200),
+                            url=vid_url if vid_url.startswith("http") else f"https://www.youtube.com/watch?v={vid_id}",
+                            channel=safe_str(data.get("uploader") or data.get("channel"), "Unknown Channel", 200),
+                            duration=safe_int(data.get("duration"), 600),  # default 10min
+                            view_count=max(1000, safe_int(data.get("view_count"), 1000)),
+                            like_count=max(100, safe_int(data.get("like_count"), 100)),
+                            upload_date=safe_str(data.get("upload_date"), "20260101", 8),
+                            description=safe_str((data.get("description") or ""), "", 500),
+                            tags=safe_list(data.get("tags"))[:10],
+                            thumbnail_url=safe_str(data.get("thumbnail"), ""),
                         )
-                        if basic_meta.title != "Unknown Title":
-                            log.info(f"[Monitor] Using basic flat-playlist data for idx={idx}: '{basic_meta.title[:40]}'")
-                            videos.append(basic_meta)
-                            meta = basic_meta
-                        else:
-                            log.info(f"[Monitor] Skipped video at idx={idx}: no metadata and no title in flat-playlist")
+                        
+                        log.info(f"[Monitor] Using basic flat-playlist data for idx={idx}: '{basic_meta.title[:40]}'")
+                        videos.append(basic_meta)
+                        meta = basic_meta
+                        
                     except Exception as e:
-                        log.info(f"[Monitor] Fallback failed for idx={idx}: {e}")
+                        log.info(f"[Monitor] Fallback failed for idx={idx}: {type(e).__name__}: {str(e)[:100]}")
                         continue
                 else:
                     log.debug(f"[Monitor] Accepted video at idx={idx} id={vid_url}: {meta.title[:50]}")
