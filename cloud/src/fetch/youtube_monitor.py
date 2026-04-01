@@ -4,7 +4,7 @@ Finds new videos, filters by config rules, returns VideoMeta objects.
 No API key needed. Uses yt-dlp + cookies for auth.
 """
 from __future__ import annotations
-import json, logging, subprocess, time, shutil, random, sys
+import json, logging, subprocess, time, shutil, random, sys, os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -289,23 +289,34 @@ class YouTubeMonitor:
         
         # Try a sequence of yt-dlp invocations with fallbacks
         # YouTube bot-check REQUIRES authentication. Priority: use cookies, then try variant clients
-        base_variants = [
-            # Priority 1: Try with browser cookies (bypasses bot check)
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "chrome", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "firefox", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "edge", video_url],
-            
-            # Priority 2: Try different YouTube player clients (less effective but may help)
+        # Optimize for CI: skip browser cookies if running in GitHub Actions
+        is_ci = os.environ.get("ENVIRONMENT") == "github_actions" or os.environ.get("CI") == "true"
+        
+        base_variants = []
+        
+        # Priority 1: Try with browser cookies (only in local dev, not CI)
+        if not is_ci:
+            base_variants.extend([
+                ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "chrome", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "firefox", video_url],
+                ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "edge", video_url],
+            ])
+            variant_note = "(cookies-from-browser priority + fallback)"
+        else:
+            variant_note = "(CI mode: direct fallback)"
+        
+        # Priority 2: Try different YouTube player clients (less effective but may help)
+        base_variants.extend([
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=android", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=web_creator", video_url],
-        ]
+        ])
         
         # Build all variants with JS runtime + cookies combinations
         all_cmds = []
         for base_cmd in base_variants:
             all_cmds.extend(self._build_cmd_variants(base_cmd))
         
-        log.info("[Monitor] _get_metadata: prepared %d command variants (cookies-from-browser priority)", len(all_cmds))
+        log.info("[Monitor] _get_metadata: prepared %d command variants %s", len(all_cmds), variant_note)
         
         attempt = 0
         for cmd in all_cmds:
