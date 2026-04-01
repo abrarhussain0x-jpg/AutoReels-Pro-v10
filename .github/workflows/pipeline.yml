@@ -217,6 +217,8 @@ jobs:
             cloud/queue/jobs.db
           key: autoreels-sqlite-dbs-v2
 
+      # ── 9. Ensure output directories exist ──────────────────────────────────
+      - name: Create logs directory
         if: always()
         run: mkdir -p cloud/logs
 
