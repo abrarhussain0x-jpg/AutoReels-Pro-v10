@@ -162,6 +162,9 @@ class YouTubeMonitor:
                     log.debug(f"[Monitor] No video id/url at idx={idx}")
                     continue
                 
+                # Log the URL format we extracted
+                log.debug(f"[Monitor] Extracted video at idx={idx}: {vid_url[:80]}")
+                
                 metadata_calls += 1
                 meta = self._get_metadata(vid_url)
                 if not meta:
@@ -187,6 +190,34 @@ class YouTubeMonitor:
             log.error("[Monitor] yt-dlp not installed. Run: pip install -U yt-dlp")
             return []
 
+    def _normalize_video_url(self, video_url: str) -> str:
+        """Normalize a video URL/ID to https://www.youtube.com/watch?v=ID format."""
+        if not video_url:
+            return ""
+        
+        # Already a full youtube.com watch URL
+        if "youtube.com/watch?v=" in video_url:
+            return video_url
+        
+        # youtu.be shorthand URL
+        if "youtu.be/" in video_url:
+            vid_id = video_url.split("youtu.be/")[-1].split("?")[0].split("&")[0]
+            return f"https://www.youtube.com/watch?v={vid_id}"
+        
+        # youtube.com/watch?v= or /v/ with different format
+        if "youtube.com" in video_url and ("watch?v=" in video_url or "/v/" in video_url):
+            return video_url
+        
+        # Just a video ID
+        if not video_url.startswith("http") and len(video_url) in (11, 12):  # typical YouTube ID lengths
+            return f"https://www.youtube.com/watch?v={video_url}"
+        
+        # Fallback: assume it's a valid URL or ID
+        if not video_url.startswith("http"):
+            return f"https://www.youtube.com/watch?v={video_url}"
+        
+        return video_url
+
     def _get_metadata(self, video_url: str) -> Optional[VideoMeta]:
         if not video_url:
             log.debug("[Monitor] _get_metadata: empty URL")
@@ -196,8 +227,7 @@ class YouTubeMonitor:
             return None
         
         # Normalize video URL
-        if not video_url.startswith("http"):
-            video_url = f"https://www.youtube.com/watch?v={video_url}"
+        video_url = self._normalize_video_url(video_url)
         
         log.info("[Monitor] _get_metadata START for: %s", video_url[:80])
         
@@ -207,7 +237,7 @@ class YouTubeMonitor:
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--no-check-certificate", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--allow-unplayable-formats", video_url],
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--geo-bypass", video_url],
-            ["yt-dlp", "--dump-json", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
+            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--force-generic-extractor", video_url],
         ]
         
         # Build all variants with JS runtime + cookies combinations
