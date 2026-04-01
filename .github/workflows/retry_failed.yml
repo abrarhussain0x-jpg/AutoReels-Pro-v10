@@ -76,17 +76,27 @@ jobs:
           YTDLP_HEALTH_STRICT: "0"
         run: |
           echo "Running yt-dlp health check"
-          python cloud/utils/yt_dlp_health_check.py || (
-            echo "Health check failed — printing any yt-dlp debug logs"
-            ls -la cloud/queue/tmp || true
-            shopt -s nullglob
-            for f in cloud/queue/tmp/*yt_dlp_debug_*; do
-              echo "---- $f ----"
-              tail -n 200 "$f" || true
-            done
-            shopt -u nullglob
-            exit 1
-          )
+          set +e
+          output=$(python cloud/utils/yt_dlp_health_check.py 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          fi
+          if echo "$output" | grep -Eiq "sign in to confirm.*not a bot|no supported javascript runtime"; then
+            echo "Known CI anti-bot/JS-runtime constraint detected; continuing in relaxed workflow mode."
+            exit 0
+          fi
+          echo "Health check failed — printing any yt-dlp debug logs"
+          ls -la cloud/queue/tmp || true
+          shopt -s nullglob
+          for f in cloud/queue/tmp/*yt_dlp_debug_*; do
+            echo "---- $f ----"
+            tail -n 200 "$f" || true
+          done
+          shopt -u nullglob
+          exit 1
 
       - name: Retry failed uploads
         env:
