@@ -290,7 +290,12 @@ class YouTubeMonitor:
         # Try a sequence of yt-dlp invocations with fallbacks
         # YouTube bot-check REQUIRES authentication. Priority: use cookies, then try variant clients
         # Optimize for CI: skip browser cookies if running in GitHub Actions
-        is_ci = os.environ.get("ENVIRONMENT") == "github_actions" or os.environ.get("CI") == "true"
+        is_ci = (
+            os.environ.get("GITHUB_ACTIONS") == "true"  # Standard GitHub Actions indicator
+            or os.environ.get("ENVIRONMENT") == "github_actions"
+            or os.environ.get("CI") == "true"
+            or os.environ.get("AUTOREELS_FORCE_RUN") == "1"  # Force includes CI-like behavior
+        )
         
         base_variants = []
         
@@ -301,9 +306,11 @@ class YouTubeMonitor:
                 ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "firefox", video_url],
                 ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "edge", video_url],
             ])
-            variant_note = "(cookies-from-browser priority + fallback)"
+            variant_note = "(local dev: cookies-from-browser priority)"
         else:
-            variant_note = "(CI mode: direct fallback)"
+            variant_note = "(CI mode: skipping browser cookies, using fallback)"
+            log.debug("[Monitor] CI detected (GITHUB_ACTIONS=%s, ENVIRONMENT=%s, AUTOREELS_FORCE_RUN=%s)", 
+                     os.environ.get("GITHUB_ACTIONS"), os.environ.get("ENVIRONMENT"), os.environ.get("AUTOREELS_FORCE_RUN"))
         
         # Priority 2: Try different YouTube player clients (less effective but may help)
         base_variants.extend([
