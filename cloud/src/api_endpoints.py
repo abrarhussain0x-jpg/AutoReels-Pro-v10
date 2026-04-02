@@ -41,14 +41,24 @@ logger = logging.getLogger(__name__)
 # ─── DATABASE singleton ───────────────────────────────────────────────────────
 _db_url = os.getenv("DATABASE_URL", "sqlite:///autoreels.db")
 _engine_kwargs: dict = {"pool_pre_ping": True}
+
+def _parse_int_env(key: str, default: int) -> int:
+    """Safely parse integer from environment variable."""
+    try:
+        return int(os.getenv(key, str(default)))
+    except (ValueError, TypeError):
+        import logging
+        logging.warning(f"Invalid {key}={os.getenv(key)}, using default={default}")
+        return default
+
 if _db_url.startswith("sqlite"):
     # SQLite doesn't support server-side connection pooling args
     from sqlalchemy.pool import StaticPool
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
     _engine_kwargs["poolclass"] = StaticPool
 else:
-    _engine_kwargs["pool_size"] = int(os.getenv("DB_POOL_SIZE", "10"))
-    _engine_kwargs["max_overflow"] = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+    _engine_kwargs["pool_size"] = _parse_int_env("DB_POOL_SIZE", 10)
+    _engine_kwargs["max_overflow"] = _parse_int_env("DB_MAX_OVERFLOW", 20)
 
 _engine = create_engine(_db_url, **_engine_kwargs)
 

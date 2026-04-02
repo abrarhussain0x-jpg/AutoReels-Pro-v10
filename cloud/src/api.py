@@ -20,11 +20,20 @@ logger = logging.getLogger(__name__)
 
 # ─── DATABASE singleton ───────────────────────────────────────────────────────
 _db_url = os.getenv("DATABASE_URL", "sqlite:///autoreels.db")
+
+def _parse_int_env(key: str, default: int) -> int:
+    """Safely parse integer from environment variable."""
+    try:
+        return int(os.getenv(key, str(default)))
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid {key}={os.getenv(key)}, using default={default}")
+        return default
+
 _engine = create_engine(
     _db_url,
     pool_pre_ping=True,
-    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+    pool_size=_parse_int_env("DB_POOL_SIZE", 10),
+    max_overflow=_parse_int_env("DB_MAX_OVERFLOW", 20),
 )
 _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
