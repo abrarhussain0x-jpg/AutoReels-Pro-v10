@@ -84,7 +84,13 @@ class CircuitBreaker:
         self.failure_count += 1
         self.last_failure_time = datetime.now()
         
-        if self.failure_count >= self.failure_threshold:
+        # In HALF_OPEN: any failure immediately re-opens the circuit
+        if self.state == CircuitState.HALF_OPEN:
+            self.state = CircuitState.OPEN
+            self.success_count = 0
+            log.error(f"[CircuitBreaker] {self.name}: Re-opened (HALF_OPEN → OPEN) after failure")
+        # In CLOSED: check threshold to potentially open
+        elif self.failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             log.error(f"[CircuitBreaker] {self.name}: OPEN after {self.failure_count} failures")
 
