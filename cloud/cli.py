@@ -4,14 +4,13 @@ import click
 import sys
 from typing import Optional
 from datetime import datetime
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich import box
 
 # Try to import rich, fall back to plain text if not available
 try:
     from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich import box
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
@@ -22,6 +21,18 @@ except ImportError:
             print(' '.join(str(a) for a in args))
         def rule(self, *args, **kwargs):
             print("=" * 60)
+    
+    class Table:
+        def __init__(self, *args, **kwargs):
+            pass
+        def add_column(self, *args, **kwargs):
+            pass
+        def add_row(self, *args, **kwargs):
+            pass
+    
+    class Panel:
+        def __init__(self, *args, **kwargs):
+            pass
 
 
 console = Console()
@@ -197,10 +208,16 @@ def test_parallel(threads):
     
     tasks = [(dummy_task, (i,), {}) for i in range(20)]
     
-    import asyncio
-    with AsyncExecutor(max_workers=threads) as executor:
-        results = asyncio.run(executor.batch_execute(tasks, batch_size=5))
+    async def run_tasks():
+        executor = AsyncExecutor(max_workers=threads, executor_type="thread")
+        try:
+            results = await executor.batch_execute(tasks, batch_size=5)
+            return results
+        finally:
+            executor.shutdown()
     
+    import asyncio
+    results = asyncio.run(run_tasks())
     print(f"✓ Processed {len(results)} tasks in parallel")
     print(f"  Results: {results[:5]}...")
 

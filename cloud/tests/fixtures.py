@@ -114,7 +114,7 @@ class ABTestEngine:
         
         return self.variants[-1]  # Fallback to last
 
-    def execute(self, *args, **kwargs) -> tuple[str, Any]:
+    def execute(self, *args, **kwargs) -> tuple:
         """
         Execute test: select variant and call handler.
         
@@ -214,15 +214,21 @@ class LoadTester:
             return request_count
 
         # Run load test
-        loop = asyncio.new_event_loop()
+        async def run_all_users():
+            """Run all user tasks concurrently."""
+            tasks = [user_task(i) for i in range(self.config.num_users)]
+            return await asyncio.gather(*tasks, return_exceptions=False)
+        
         try:
-            tasks = [
-                user_task((i * self.config.ramp_up_time) // self.config.num_users)
-                for i in range(self.config.num_users)
-            ]
-            loop.run_until_complete(asyncio.gather(*tasks))
-        finally:
-            loop.close()
+            asyncio.run(run_all_users())
+        except RuntimeError:
+            # Fallback for environments where asyncio.run() doesn't work
+            loop = asyncio.new_event_loop()
+            try:
+                tasks = [user_task(i) for i in range(self.config.num_users)]
+                loop.run_until_complete(asyncio.gather(*tasks))
+            finally:
+                loop.close()
 
         return self._analyze_results()
 
