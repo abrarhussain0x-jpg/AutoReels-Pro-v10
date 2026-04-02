@@ -169,6 +169,58 @@ async def status(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail=str(e))
 
 
+# ─── METRICS & OBSERVABILITY ─────────────────────────────────────────────────
+
+@app.get("/metrics")
+@limiter.limit("100/minute")
+async def get_metrics(request: Request):
+    """Get aggregated performance and pipeline metrics."""
+    try:
+        from .dashboard.metrics_api import MetricsAPI
+        return MetricsAPI.get_metrics_endpoint()
+    except Exception as e:
+        logger.error(f"Metrics endpoint error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
+
+
+@app.get("/metrics/performance")
+@limiter.limit("60/minute")
+async def get_performance_metrics(request: Request):
+    """Get detailed performance metrics."""
+    try:
+        from .dashboard.metrics_api import MetricsAPI
+        return MetricsAPI.get_performance_endpoint()
+    except Exception as e:
+        logger.error(f"Performance metrics error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch performance metrics")
+
+
+@app.get("/health/detailed")
+@limiter.limit("60/minute")
+async def get_detailed_health(request: Request):
+    """Get detailed health check status."""
+    try:
+        from .health.observability import get_health_check
+        health = get_health_check()
+        return health.status()
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch health status")
+
+
+@app.get("/dashboard.html")
+async def get_dashboard_html(request: Request):
+    """Get HTML dashboard."""
+    try:
+        from .dashboard.metrics_api import DashboardHTML
+        html = DashboardHTML.generate_dashboard_html()
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(content=html)
+    except Exception as e:
+        logger.error(f"Dashboard html error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate dashboard")
+
+
 # ─── WEBSOCKET ────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws/pipeline")
