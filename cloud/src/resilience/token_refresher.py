@@ -33,7 +33,11 @@ class TokenRefresher:
 
     def __init__(self, db_path: Path, cfg: dict, notifier=None):
         self.db_path  = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Failed to create token refresher database directory: %s", e)
+            raise
         self.cfg      = cfg
         self.notifier = notifier
         with self._conn() as c:

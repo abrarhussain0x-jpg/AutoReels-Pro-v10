@@ -193,7 +193,11 @@ def main() -> None:
     cm = ConfigManager(config_path)
     cfg = cm.config
     queue_dir = ROOT / "queue"
-    queue_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        queue_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.error("Failed to create queue directory %s: %s", queue_dir, e)
+        sys.exit(1)
 
     log.info("AUTO-REELS PRO v10.0 | niche=%s", cfg.get("niche", "movie"))
 

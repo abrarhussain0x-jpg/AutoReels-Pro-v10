@@ -122,7 +122,11 @@ class PipelineV2:
         self._rl = PlatformRateLimiters()
 
         self._count_dir = Path(__file__).parent.parent.parent / "queue"
-        self._count_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._count_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Failed to create pipeline queue directory: %s", e)
+            raise
 
         if DRY_RUN:
             log.warning("[Pipeline] DRY_RUN=1 — no actual uploads")

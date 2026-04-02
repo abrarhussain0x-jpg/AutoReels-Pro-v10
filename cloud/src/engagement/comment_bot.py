@@ -90,7 +90,11 @@ class CommentBot:
         negative_alert_threshold: float = 0.30,
     ) -> None:
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Failed to create comment bot database directory: %s", e)
+            raise
         self.api_key = api_key
         self.enabled = enabled
         self.reply_to_questions = reply_to_questions

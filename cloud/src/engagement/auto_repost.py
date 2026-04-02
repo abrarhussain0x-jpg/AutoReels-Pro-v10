@@ -46,7 +46,11 @@ class AutoRepostEngine:
     def __init__(self, analytics_db: Path, repost_db: Path):
         self.analytics_db = Path(analytics_db)
         self.repost_db    = Path(repost_db)
-        self.repost_db.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.repost_db.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Failed to create auto-repost database directory: %s", e)
+            raise
         with self._conn() as c:
             c.executescript(SCHEMA)
 

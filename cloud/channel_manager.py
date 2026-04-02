@@ -42,11 +42,15 @@ def load_config(path: Path) -> dict:
 def save_channels(config_path: Path, channels: list):
     """Write updated channels list back to config.yaml (preserves other fields)."""
     import yaml
-    content = config_path.read_text(encoding="utf-8")
-    cfg     = yaml.safe_load(content) or {}
-    cfg["channels"] = channels
-    config_path.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
-    print(f"✅ config.yaml updated ({len(channels)} channels)")
+    try:
+        content = config_path.read_text(encoding="utf-8")
+        cfg     = yaml.safe_load(content) or {}
+        cfg["channels"] = channels
+        config_path.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
+        print(f"✅ config.yaml updated ({len(channels)} channels)")
+    except Exception as e:
+        print(f"❌ Failed to save config: {e}")
+        raise
 
 
 def test_channel(url: str, cookies: str = "") -> bool:

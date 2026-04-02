@@ -60,9 +60,17 @@ def save_to_env(page_id: str, token: str):
             updated.append(f"FB_PAGE_ID={page_id}")
         if not found_token:
             updated.append(f"FB_PAGE_ACCESS_TOKEN={token}")
-        ENV.write_text("\n".join(updated) + "\n")
+        try:
+            ENV.write_text("\n".join(updated) + "\n")
+        except OSError as e:
+            print(f"❌ Failed to write {ENV}: {e}")
+            raise
     else:
-        ENV.write_text(f"FB_PAGE_ID={page_id}\nFB_PAGE_ACCESS_TOKEN={token}\n")
+        try:
+            ENV.write_text(f"FB_PAGE_ID={page_id}\nFB_PAGE_ACCESS_TOKEN={token}\n")
+        except OSError as e:
+            print(f"❌ Failed to write {ENV}: {e}")
+            raise
     print(f"\n  ✅ Saved to {ENV}")
 
 

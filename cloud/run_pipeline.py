@@ -302,7 +302,11 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
     prog = PipelineProgress(len(engines["yt_monitor"].channels), clips_per)
 
     tmp_dir = queue_dir / "tmp"
-    tmp_dir.mkdir(exist_ok=True)
+    try:
+        tmp_dir.mkdir(exist_ok=True)
+    except OSError as e:
+        log.error("Failed to create tmp directory %s: %s", tmp_dir, e)
+        return 0
 
     # Check daily limit
     today_uploads = _count_today_uploads(queue_dir)
@@ -406,7 +410,12 @@ def run_once(cfg: dict, queue_dir: Path, engines: dict) -> int:
         # 7. Process + upload clips
         clips_done = 0
         out_dir = tmp_dir / video.video_id / "clips"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Failed to create output directory %s: %s", out_dir, e)
+            aq.mark_failed(video.video_id, f"mkdir: {str(e)[:100]}")
+            continue
 
         for i, clip_time in enumerate(clip_times, 1):
             if today_uploads + total_uploaded + clips_done >= daily_limit:
@@ -645,7 +654,11 @@ def main():
         log.warning("[Pipeline] process_threshold (%.2f) should be < defer_threshold (%.2f)", process_t, defer_t)
     
     queue_dir = ROOT / "queue"
-    queue_dir.mkdir(exist_ok=True)
+    try:
+        queue_dir.mkdir(exist_ok=True)
+    except OSError as e:
+        log.error("Failed to create queue directory %s: %s", queue_dir, e)
+        sys.exit(1)
 
     if args.queue_status:
         from src.scheduler.job_queue import JobQueue

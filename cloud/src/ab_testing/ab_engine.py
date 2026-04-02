@@ -91,7 +91,11 @@ class ABEngine:
 
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("Failed to create AB testing database directory: %s", e)
+            raise
         with self._conn() as c:
             c.executescript(SCHEMA)
         self._init_weights()

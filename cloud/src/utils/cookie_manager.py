@@ -77,6 +77,13 @@ class CookieManager:
         ]
         log.info("[Cookies] exporting from %s browser...", browser)
         try:
+            # Create parent directory first
+            try:
+                self.cookies_path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                log.warning("[Cookies] failed to create parent directory: %s", e)
+                return False
+            
             r = subprocess.run(cmd, capture_output=True, timeout=30)
             if r.returncode == 0 and self.cookies_path.exists():
                 log.info("[Cookies] ✅ exported from %s → %s", browser, self.cookies_path)

@@ -66,8 +66,11 @@ class WeeklyReporter:
 
         # Always save to file
         report_path = self.queue_dir / f"report_{datetime.now().strftime('%Y%m%d')}.txt"
-        report_path.write_text(report.replace("*", "").replace("_", ""), encoding="utf-8")
-        log.info("[Reporter] saved to %s", report_path)
+        try:
+            report_path.write_text(report.replace("*", "").replace("_", ""), encoding="utf-8")
+            log.info("[Reporter] saved to %s", report_path)
+        except OSError as e:
+            log.error("[Reporter] failed to save report to %s: %s", report_path, e)
 
         return sent_any
 

@@ -274,14 +274,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 )
 
         ass_file = Path(tempfile.mktemp(suffix=".ass"))
-        ass_file.write_text("".join(lines), encoding="utf-8")
+        try:
+            ass_file.write_text("".join(lines), encoding="utf-8")
+        except OSError as e:
+            log.error("[Subtitles] failed to write ASS file %s: %s", ass_file, e)
+            return ass_file  # Return anyway but it may fail next
         return ass_file
 
     def _burn_ass(
         self, input_path: Path, output_path: Path, ass_path: Path
     ) -> bool:
         """Burn ASS subtitles into video using ffmpeg."""
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error("[Subtitles] failed to create output directory %s: %s", output_path.parent, e)
+            return False
+        
         cmd = [
             "ffmpeg", "-y",
             "-i", str(input_path),
