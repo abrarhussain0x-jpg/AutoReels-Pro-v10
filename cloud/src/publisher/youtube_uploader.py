@@ -286,8 +286,6 @@ class YouTubeUploader:
 
     def _set_thumbnail(self, video_id: str, thumbnail_path: Path, token: str) -> bool:
         """Upload a custom thumbnail for the video."""
-        url = f"{UPLOAD_BASE.replace('/upload', '')}/thumbnails/set?videoId={video_id}"
-        # Use the v3 thumbnails endpoint
         url = f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={video_id}"
 
         with open(thumbnail_path, "rb") as fh:
@@ -320,7 +318,7 @@ class YouTubeUploader:
         lines = [l.strip() for l in caption.split("\n") if l.strip()]
         title = (lines[0] if lines else "Watch This")[:MAX_TITLE_LEN]
         # Ensure #Shorts appears in title for Shorts indexing
-        if "#shorts" not in title.lower() and "#Shorts" not in title:
+        if "#shorts" not in title.lower():
             # Append if there's room, otherwise shorten
             shorts_tag = " #Shorts"
             if len(title) + len(shorts_tag) <= MAX_TITLE_LEN:
