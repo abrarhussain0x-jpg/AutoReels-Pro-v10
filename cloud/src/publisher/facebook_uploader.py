@@ -48,6 +48,12 @@ class FacebookUploader:
 
         upload_session_id = session.get("upload_session_id") or session.get("id")
         video_id          = session.get("video_id")
+        
+        # Validate required fields from session response
+        if not upload_session_id or not video_id:
+            log.error("[FB] session init missing fields: upload_session_id=%s, video_id=%s",
+                      upload_session_id, video_id)
+            return None
 
         # Step 2: Upload file bytes (chunked for large files)
         success = self._transfer_file(upload_session_id, clip_path)
@@ -84,6 +90,10 @@ class FacebookUploader:
 
     def _transfer_file(self, upload_session_id: str, clip_path: Path) -> bool:
         """Transfer video bytes via Graph resumable upload."""
+        if not upload_session_id:
+            log.error("[FB] cannot transfer: upload_session_id is empty")
+            return False
+            
         file_size = clip_path.stat().st_size
         chunk_size = 10 * 1024 * 1024   # 10 MB chunks
         offset = 0
@@ -105,7 +115,7 @@ class FacebookUploader:
                     with urllib.request.urlopen(req, timeout=120) as resp:
                         result = json.loads(resp.read())
                     if not result.get("success"):
-                        log.error("[FB] chunk upload failed: %s", result)
+                        log.error("[FB] chunk upload failed at offset %d: %s", offset, result)
                         return False
                     offset += len(chunk)
                     log.debug("[FB] uploaded %d/%d bytes", offset, file_size)
@@ -113,11 +123,16 @@ class FacebookUploader:
                     log.error("[FB] chunk error at offset %d: %s", offset, e)
                     return False
 
+        log.debug("[FB] file transfer complete: %d bytes uploaded", offset)
         return True
 
     def _finalize(self, video_id: str, caption: str,
                   thumbnail_path: Optional[Path] = None) -> Optional[str]:
         """Finalize upload and publish as Reel."""
+        if not video_id:
+            log.error("[FB] cannot finalize: video_id is empty/None")
+            return None
+            
         params = {
             "access_token": self.token,
             "upload_phase":  "finish",
@@ -134,7 +149,11 @@ class FacebookUploader:
             req = urllib.request.Request(url, data=data, method="POST")
             with urllib.request.urlopen(req, timeout=30) as resp:
                 result = json.loads(resp.read())
-            return result.get("post_id") or result.get("id")
+            post_id = result.get("post_id") or result.get("id")
+            if not post_id:
+                log.error("[FB] finalize response missing post_id/id: %s", result)
+                return None
+            return post_id
         except urllib.error.HTTPError as e:
             body = e.read().decode()[:300]
             log.error("[FB] finalize HTTP error %d: %s", e.code, body)
