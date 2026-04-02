@@ -4,6 +4,7 @@ import re
 import hmac
 import hashlib
 import logging
+import threading
 from typing import Any, Optional, Dict, List, Pattern
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -106,10 +107,11 @@ class InputValidator:
 
 
 class SecretManager:
-    """Manage API tokens and secret rotation."""
+    """Manage API tokens and secret rotation (thread-safe)."""
 
     def __init__(self):
         self.tokens: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
 
     def register_token(
         self,
@@ -123,48 +125,52 @@ class SecretManager:
         if expires_in:
             expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
         
-        self.tokens[service] = {
-            "token": token,
-            "expires_at": expires_at,
-            "refresh_token": refresh_token,
-            "created_at": datetime.utcnow()
-        }
+        with self._lock:
+            self.tokens[service] = {
+                "token": token,
+                "expires_at": expires_at,
+                "refresh_token": refresh_token,
+                "created_at": datetime.utcnow()
+            }
 
     def get_token(self, service: str) -> Optional[str]:
         """Get token, checking if expired."""
-        if service not in self.tokens:
-            return None
-        
-        token_data = self.tokens[service]
-        
-        # Check expiry with 5 min buffer
-        if token_data.get("expires_at"):
-            if datetime.utcnow() >= token_data["expires_at"] - timedelta(minutes=5):
-                log.warning(f"Token for {service} expired or expiring soon")
+        with self._lock:
+            if service not in self.tokens:
                 return None
-        
-        return token_data.get("token")
+            
+            token_data = self.tokens[service]
+            
+            # Check expiry with 5 min buffer
+            if token_data.get("expires_at"):
+                if datetime.utcnow() >= token_data["expires_at"] - timedelta(minutes=5):
+                    log.warning(f"Token for {service} expired or expiring soon")
+                    return None
+            
+            return token_data.get("token")
 
     def is_token_expired(self, service: str) -> bool:
         """Check if token is expired."""
-        if service not in self.tokens:
-            return True
-        
-        token_data = self.tokens[service]
-        if not token_data.get("expires_at"):
-            return False
-        
-        return datetime.utcnow() >= token_data["expires_at"]
+        with self._lock:
+            if service not in self.tokens:
+                return True
+            
+            token_data = self.tokens[service]
+            if not token_data.get("expires_at"):
+                return False
+            
+            return datetime.utcnow() >= token_data["expires_at"]
 
     def get_refresh_token(self, service: str) -> Optional[str]:
         """Get refresh token for service."""
-        if service not in self.tokens:
-            return None
-        return self.tokens[service].get("refresh_token")
+        with self._lock:
+            if service not in self.tokens:
+                return None
+            return self.tokens[service].get("refresh_token")
 
 
 class RateLimiter:
-    """Simple token bucket rate limiter."""
+    """Simple token bucket rate limiter (thread-safe)."""
 
     def __init__(self, rate: int, per_seconds: int = 1):
         """
@@ -176,34 +182,37 @@ class RateLimiter:
         """
         self.rate = rate
         self.per_seconds = per_seconds
-        self.tokens = rate
+        self.tokens = float(rate)
         self.last_update = datetime.utcnow()
+        self._lock = threading.Lock()
 
     def is_allowed(self, tokens_needed: int = 1) -> bool:
-        """Check if request is allowed."""
-        now = datetime.utcnow()
-        elapsed = (now - self.last_update).total_seconds()
-        
-        # Refill tokens based on elapsed time
-        self.tokens = min(
-            self.rate,
-            self.tokens + (elapsed * self.rate / self.per_seconds)
-        )
-        self.last_update = now
-        
-        if self.tokens >= tokens_needed:
-            self.tokens -= tokens_needed
-            return True
-        
-        return False
+        """Check if request is allowed (thread-safe)."""
+        with self._lock:
+            now = datetime.utcnow()
+            elapsed = (now - self.last_update).total_seconds()
+            
+            # Refill tokens based on elapsed time
+            self.tokens = min(
+                self.rate,
+                self.tokens + (elapsed * self.rate / self.per_seconds)
+            )
+            self.last_update = now
+            
+            if self.tokens >= tokens_needed:
+                self.tokens -= tokens_needed
+                return True
+            
+            return False
 
     def wait_until_allowed(self, tokens_needed: int = 1) -> float:
         """Calculate wait time until request allowed."""
         if self.is_allowed(tokens_needed):
             return 0.0
         
-        tokens_deficit = tokens_needed - self.tokens
-        return (tokens_deficit / self.rate) * self.per_seconds
+        with self._lock:
+            tokens_deficit = tokens_needed - self.tokens
+            return (tokens_deficit / self.rate) * self.per_seconds
 
 
 class SignatureValidator:

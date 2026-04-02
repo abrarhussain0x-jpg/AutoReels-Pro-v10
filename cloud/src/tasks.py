@@ -69,8 +69,10 @@ else:
             broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
             result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
         )
-    except:
-        pass
+    except Exception as e:
+        # Redis may not be available in development - this is expected
+        logger_temp = logging.getLogger(__name__)
+        logger_temp.debug(f"[Celery] Redis config failed (expected in dev): {e}")
 
 logger = logging.getLogger(__name__)
 

@@ -51,7 +51,10 @@ class RateLimiter:
             if current is None:
                 return limit
             return max(0, limit - int(current))
-        except:
+        except Exception as e:
+            # Log error but don't fail - allow request through if cache fails
+            import logging
+            logging.warning(f"[RateLimit] Cache lookup failed for {key}: {e}")
             return limit
 
 # ── MIDDLEWARE ──────────────────────────────────────────────

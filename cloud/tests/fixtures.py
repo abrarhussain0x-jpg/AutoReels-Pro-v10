@@ -239,6 +239,16 @@ class LoadTester:
         
         response_times = [r["response_time_ms"] for r in self.results]
         
+        if not response_times:
+            return {
+                "total_requests": 0,
+                "total_errors": len(self.errors),
+                "error_rate": 1.0 if self.errors else 0.0,
+                "response_time_stats": {}
+            }
+        
+        sorted_times = sorted(response_times)
+        
         return {
             "total_requests": len(self.results),
             "total_errors": len(self.errors),
@@ -247,8 +257,8 @@ class LoadTester:
                 "min": min(response_times),
                 "max": max(response_times),
                 "mean": sum(response_times) / len(response_times),
-                "median": sorted(response_times)[len(response_times) // 2],
-                "p95": sorted(response_times)[int(len(response_times) * 0.95)] if response_times else 0,
-                "p99": sorted(response_times)[int(len(response_times) * 0.99)] if response_times else 0,
+                "median": sorted_times[len(sorted_times) // 2],
+                "p95": sorted_times[int(len(sorted_times) * 0.95)] if sorted_times else 0,
+                "p99": sorted_times[int(len(sorted_times) * 0.99)] if sorted_times else 0,
             }
         }
