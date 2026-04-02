@@ -51,8 +51,14 @@ class YouTubeMonitor:
         self._cooldown_until = 0
         # Path to persist rate-limit cooldown across processes/runs
         self._cooldown_file = Path("cloud/queue/tmp/yt_dlp_rate_limit.json")
+        # Get the Python executable for running yt-dlp as a module
+        self._python_exe = sys.executable
         # Verify yt-dlp is installed and working
         self._validate_ytdlp()
+
+    def _get_ytdlp_cmd(self) -> list:
+        """Return base command array for yt-dlp (using python -m)."""
+        return [self._python_exe, "-m", "yt_dlp"]
 
     def scan_all(self) -> List[VideoMeta]:
         """Scan all configured channels, return new candidates."""
@@ -75,7 +81,8 @@ class YouTubeMonitor:
     def _validate_ytdlp(self) -> None:
         """Validate that yt-dlp is installed and working."""
         try:
-            r = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, timeout=10)
+            cmd = self._get_ytdlp_cmd() + ["--version"]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if r.returncode == 0:
                 version_str = r.stdout.strip()
                 log.info("[Monitor] yt-dlp version: %s", version_str)
@@ -88,28 +95,29 @@ class YouTubeMonitor:
     def _build_cmd_variants(self, base_cmd: list) -> list:
         """Build yt-dlp command variants with JS runtime and cookies."""
         if not base_cmd or not base_cmd[-1]:
-            return [base_cmd]
+            return [self._get_ytdlp_cmd() + base_cmd]
         
         variants = []
         url = base_cmd[-1]
         base_without_url = base_cmd[:-1]
+        base_prefix = self._get_ytdlp_cmd()
         
         # Variant 1: base command
-        variants.append(base_cmd)
+        variants.append(base_prefix + base_without_url + [url])
         
         # Variant 2: with JS runtime if available
         if self.js_runtime:
-            cmd_with_js = base_without_url + ["--js-runtimes", self.js_runtime, url]
+            cmd_with_js = base_prefix + base_without_url + ["--js-runtimes", self.js_runtime, url]
             variants.append(cmd_with_js)
         
         # Variant 3: with cookies if available
         if Path(self.cookies).exists():
-            cmd_with_cookies = base_without_url + ["--cookies", self.cookies, url]
+            cmd_with_cookies = base_prefix + base_without_url + ["--cookies", self.cookies, url]
             variants.append(cmd_with_cookies)
             
             # Variant 4: with both JS runtime and cookies
             if self.js_runtime:
-                cmd_with_both = base_without_url + ["--js-runtimes", self.js_runtime, "--cookies", self.cookies, url]
+                cmd_with_both = base_prefix + base_without_url + ["--js-runtimes", self.js_runtime, "--cookies", self.cookies, url]
                 variants.append(cmd_with_both)
         
         return variants
@@ -118,8 +126,8 @@ class YouTubeMonitor:
         url = ch["url"]
         # Aggressively scan: fetch up to 1000 videos per channel
         max_vids = ch.get("max_videos_per_run", 1000)
-        cmd = [
-            "yt-dlp", "--flat-playlist", "--dump-json",
+        cmd = self._get_ytdlp_cmd() + [
+            "--flat-playlist", "--dump-json",
             "--playlist-end", str(max_vids),
             "--no-warnings", "--extractor-args", "youtube:params={}",
         ]
@@ -302,9 +310,9 @@ class YouTubeMonitor:
         # Priority 1: Try with browser cookies (only in local dev, not CI)
         if not is_ci:
             base_variants.extend([
-                ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "chrome", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "firefox", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "edge", video_url],
+                ["--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "chrome", video_url],
+                ["--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "firefox", video_url],
+                ["--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--cookies-from-browser", "edge", video_url],
             ])
             variant_note = "(local dev: cookies-from-browser priority)"
         else:
@@ -314,8 +322,8 @@ class YouTubeMonitor:
         
         # Priority 2: Try different YouTube player clients (less effective but may help)
         base_variants.extend([
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=android", video_url],
-            ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=web_creator", video_url],
+            ["--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=android", video_url],
+            ["--dump-json", "--no-playlist", "--no-warnings", "--skip-download", "--extractor-args", "youtube:player_client=web_creator", video_url],
         ])
         
         # Build all variants with JS runtime + cookies combinations
@@ -444,10 +452,10 @@ class YouTubeMonitor:
         """Return True if yt-dlp reports at least one audio/video format for the URL."""
         try:
             base_variants = [
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", video_url],
-                ["yt-dlp", "--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", video_url],
+                ["--dump-json", "--no-playlist", "--skip-download", video_url],
+                ["--dump-json", "--no-playlist", "--skip-download", "--allow-unplayable-formats", video_url],
+                ["--dump-json", "--no-playlist", "--skip-download", "--no-check-certificate", video_url],
+                ["--dump-json", "--no-playlist", "--skip-download", "--force-generic-extractor", video_url],
             ]
             
             all_cmds = []
@@ -481,7 +489,7 @@ class YouTubeMonitor:
         out_tpl = str(output_dir / f"{video.video_id}.%(ext)s")
 
         base_cmd = [
-            "yt-dlp", "-f", quality,
+            "-f", quality,
             "--merge-output-format", "mp4",
             "-o", out_tpl, "--no-warnings",
             video.url
@@ -510,7 +518,7 @@ class YouTubeMonitor:
         log.warning("[Monitor] initial download failed, trying fallback formats for %s", video.video_id)
         for fallback in ["bestvideo+bestaudio/best", "best"]:
             try:
-                fb_cmd = ["yt-dlp", "-f", fallback, "--merge-output-format", "mp4",
+                fb_cmd = self._get_ytdlp_cmd() + ["-f", fallback, "--merge-output-format", "mp4",
                           "-o", out_tpl, "--no-warnings", video.url]
                 r = subprocess.run(fb_cmd, capture_output=True, timeout=600)
                 if r.returncode == 0:

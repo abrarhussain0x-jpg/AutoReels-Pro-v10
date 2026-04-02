@@ -70,22 +70,32 @@ class VideoProcessor:
         self._check_ffmpeg()
 
     def _check_ffmpeg(self):
-        """Validate ffmpeg and ffprobe are installed. Fail fast if missing."""
+        """Validate ffmpeg and ffprobe are installed. Warn if missing but allow pipeline to start."""
+        self.ffmpeg_available = True
+        self.ffprobe_available = True
+        
         for tool in ["ffmpeg", "ffprobe"]:
             try:
                 subprocess.run([tool, "-version"], capture_output=True, timeout=5)
                 log.info("[Processor] %s OK", tool)
             except FileNotFoundError:
-                log.error("[Processor] CRITICAL: %s NOT FOUND", tool)
-                raise RuntimeError(
-                    f"❌ {tool} is required but not installed.\n"
-                    f"  Install with: sudo apt install ffmpeg\n"
-                    f"  Or on macOS: brew install ffmpeg\n"
-                    f"  Or on Windows: Download from ffmpeg.org"
-                )
+                log.warning("[Processor] WARNING: %s NOT FOUND — video processing disabled", tool)
+                if tool == "ffmpeg":
+                    self.ffmpeg_available = False
+                else:
+                    self.ffprobe_available = False
 
     def process_clip(self, job: ClipJob) -> ProcessResult:
         """Cut + resize + overlay + encode a single clip."""
+        # Guard: check if ffmpeg is available
+        if not self.ffmpeg_available:
+            log.error("[Processor] ffmpeg is not available — cannot process clip for %s", job.source_path.name)
+            return ProcessResult(
+                success=False,
+                output_path=None,
+                error="ffmpeg is not installed on this system. Install ffmpeg to enable video processing."
+            )
+        
         job.output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build video filter chain
