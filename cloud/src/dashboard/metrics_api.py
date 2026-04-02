@@ -127,6 +127,10 @@ class DashboardHTML:
         """Generate dashboard HTML."""
         dashboard = DashboardMetrics()
         data = dashboard.get_dashboard_data()
+        
+        # Determine system status class
+        system_status_class = "status" if data['system']['healthy'] else "status error"
+        system_status_text = "✓ Healthy" if data['system']['healthy'] else "✗ Issues"
 
         html = f"""
         <!DOCTYPE html>
@@ -209,8 +213,8 @@ class DashboardHTML:
                     
                     <div class="metric-card">
                         <div class="metric-label">System Status</div>
-                        <div class="metric-value {'status' if data['system']['healthy'] else 'status error'}">
-                            {'✓ Healthy' if data['system']['healthy'] else '✗ Issues'}
+                        <div class="metric-value {system_status_class}">
+                            {system_status_text}
                         </div>
                     </div>
                 </div>
