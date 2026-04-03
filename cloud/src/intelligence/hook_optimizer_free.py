@@ -118,7 +118,7 @@ class HookOptimizerFree:
                     avg_retention = (avg_retention * uses + ?) / (uses + 1),
                     updated_at = ?
             """, (phrase, platform, niche, angle, 1 if is_win else 0, views,
-                  retention_rate, 1.0, time.time(), time.time(),
+                  retention_rate, time.time(), time.time(),
                   1 if is_win else 0, views, retention_rate, time.time()))
 
     def get_top_hooks(self, limit: int = 20) -> List[dict]:

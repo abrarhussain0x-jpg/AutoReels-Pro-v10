@@ -56,6 +56,7 @@ def load_all(cfg: dict, queue_dir: Path):
     from src.publisher.upload_dispatcher  import UploadDispatcher
     from src.publisher.facebook_uploader  import FacebookUploader
     from src.publisher.tiktok_uploader    import TikTokUploader
+    from src.publisher.youtube_uploader   import YouTubeUploader
     from src.optimizer.caption_optimizer  import CaptionOptimizer
     from src.brain.scorer_v10            import VideoScorerV10
     from src.brain.trend_detector_v10    import TrendDetectorV10
@@ -194,6 +195,20 @@ def load_all(cfg: dict, queue_dir: Path):
                 access_token=tt_tok,
                 privacy_level=tt_cfg.get("privacy_level","PUBLIC_TO_EVERYONE"),
             )
+    yt_up_cfg = cfg.get("youtube_shorts", {})
+    if not yt_up_cfg.get("disabled", False):
+        yt_client_id     = yt_up_cfg.get("client_id",     os.getenv("YOUTUBE_CLIENT_ID",     ""))
+        yt_client_secret = yt_up_cfg.get("client_secret", os.getenv("YOUTUBE_CLIENT_SECRET", ""))
+        yt_refresh_tok   = yt_up_cfg.get("refresh_token", os.getenv("YOUTUBE_REFRESH_TOKEN", ""))
+        yt_uploader = YouTubeUploader(
+            client_id=yt_client_id,
+            client_secret=yt_client_secret,
+            refresh_token=yt_refresh_tok,
+            privacy_status=yt_up_cfg.get("privacy_status", "public"),
+            category_id=str(yt_up_cfg.get("category_id", "22")),
+        )
+        if yt_uploader.is_configured():
+            uploaders["youtube"] = yt_uploader
     account_rotator = AccountRotator(db_path=queue_dir / "account_rotation.db", config=cfg)
 
     # FB Algorithm engines
