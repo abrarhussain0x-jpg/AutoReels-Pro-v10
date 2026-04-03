@@ -269,3 +269,20 @@ class ContentGenerator:
             cta=f"Follow {self.channel_name} for Part {clip_index+1}!",
             angle=angle, platform=platform, arc_role=arc_role, from_fallback=True,
         )
+
+    def batch_generate_captions(self, clip_ids: list) -> list:
+        """
+        Generate a TikTok caption for each clip_id in the list.
+        Returns a list of GeneratedContent objects (one per clip).
+        """
+        results = []
+        total = len(clip_ids)
+        for i, clip_id in enumerate(clip_ids, start=1):
+            content = self.generate(
+                video_title=str(clip_id),
+                platform="tiktok",
+                clip_index=i,
+                total_clips=total,
+            )
+            results.append(content)
+        return results

@@ -1,6 +1,6 @@
 # AUTO-REELS PRO v10.0 — Production Requirements
 # ── Core ──────────────────────────────────────────
-yt-dlp>=2025.1.0
+yt-dlp==2026.02.21
 requests==2.32.3
 python-dotenv==1.0.1
 PyYAML==6.0.2

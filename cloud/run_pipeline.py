@@ -665,8 +665,8 @@ def main():
     # Validate critical thresholds
     process_t = float(cfg.get("process_threshold", 0.35))
     defer_t = float(cfg.get("defer_threshold", 0.20))
-    if process_t >= defer_t:
-        log.warning("[Pipeline] process_threshold (%.2f) should be < defer_threshold (%.2f)", process_t, defer_t)
+    if process_t < defer_t:
+        log.warning("[Pipeline] process_threshold (%.2f) should be > defer_threshold (%.2f)", process_t, defer_t)
     
     queue_dir = ROOT / "queue"
     try:

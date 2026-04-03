@@ -107,8 +107,12 @@ manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     logger.info("AutoReels API v10 starting...")
     try:
-        from .database.schema import Base
+        from .database.schema import Base, create_indexes
         Base.metadata.create_all(bind=_engine)
+        try:
+            create_indexes(_engine)
+        except Exception as idx_err:
+            logger.debug("create_indexes skipped (SQLite or already exists): %s", idx_err)
         logger.info("Database schema ready")
     except Exception as e:
         logger.warning("DB schema init skipped: %s", e)
@@ -312,9 +316,9 @@ async def reprocess_video(
     db.commit()
     try:
         from .tasks import process_video
-        background_tasks.add_task(process_video, video_id)
-    except ImportError:
-        pass
+        background_tasks.add_task(process_video, {"video_id": video_id, "path": "", "status": "requeued"})
+    except ImportError as e:
+        logger.warning("Celery tasks unavailable — video requeued in DB only: %s", e)
     return {"status": "requeued", "video_id": video_id}
 
 
@@ -334,3 +338,46 @@ async def clear_cache(_: None = Depends(require_admin)):
         return {"status": "cache_cleared"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── PIPELINE HELPER ──────────────────────────────────────────────────────────
+
+def run_pipeline_internal(mode: str = "--once") -> dict:
+    """
+    Run the pipeline programmatically (called by the CLI 'run' command).
+
+    Supported modes:
+        ``--once``     – single pipeline pass (default)
+        ``--daemon``   – continuous loop (blocks until interrupted)
+        ``--dry-run``  – process without uploading
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    pipeline_script = Path(__file__).resolve().parents[1] / "run_pipeline.py"
+    cmd = [sys.executable, str(pipeline_script)]
+    if mode == "--daemon":
+        cmd.append("--daemon")
+    elif mode == "--dry-run":
+        cmd.append("--dry-run")
+
+    logger.info("run_pipeline_internal mode=%s cmd=%s", mode, " ".join(cmd))
+    try:
+        # 600s (10 min) covers a typical single-video pipeline run including
+        # download, scene detection, subtitle burn, and upload.
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        output = {
+            "returncode": result.returncode,
+            "stdout": result.stdout[-1000:] if result.stdout else "",
+            "stderr": result.stderr[-1000:] if result.stderr else "",
+        }
+        if result.returncode != 0:
+            logger.error("Pipeline exited with code %d: %s", result.returncode, result.stderr[-300:])
+        return output
+    except subprocess.TimeoutExpired:
+        logger.error("run_pipeline_internal timed out after 600s")
+        return {"returncode": -1, "stdout": "", "stderr": "Pipeline timed out after 600s"}
+    except Exception as exc:
+        logger.error("run_pipeline_internal error: %s", exc)
+        return {"returncode": -1, "stdout": "", "stderr": str(exc)}
