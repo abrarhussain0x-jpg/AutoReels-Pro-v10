@@ -89,7 +89,7 @@ class GrowthPredictor:
         with self._conn() as c:
             c.executescript(SCHEMA)
         self._load_weights()
-        log.info("[GrowthPredictor] init gate=%s threshold=%.2f", gate, threshold)
+        log.info("[GrowthPredictor] init gate=%s threshold=%.2f", self.gate, self.threshold)
 
     def predict(
         self,

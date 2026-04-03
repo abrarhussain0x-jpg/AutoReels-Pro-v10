@@ -176,3 +176,42 @@ class VideoScorerV10:
         """Update running channel average (fed by analytics after uploads)."""
         old = self._channel_history.get(channel_id, 0.5)
         self._channel_history[channel_id] = old * 0.8 + score * 0.2
+
+    def score_all_clips(self, video_id: str) -> list:
+        """
+        Retrieve processed clips for video_id from the database and return
+        a list of dicts with clip_id and composite_score.
+        Falls back to an empty list if the DB is unavailable.
+        """
+        import os
+        try:
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            from src.database.schema import Clip
+            db_url = os.getenv("DATABASE_URL", "sqlite:///autoreels.db")
+            engine = create_engine(db_url, pool_pre_ping=True)
+            Session = sessionmaker(bind=engine)
+            db = Session()
+            try:
+                clips = db.query(Clip).filter(Clip.video_id == video_id).all()
+                result = []
+                for clip in clips:
+                    # Audio energy is the strongest signal for clip engagement (60%);
+                    # motion_score adds visual dynamism (30%); scene_score is a
+                    # secondary signal from the scene-detection phase (10%).
+                    composite = (
+                        0.6 * (clip.audio_energy or 0.5) +
+                        0.3 * (clip.motion_score or 0.5) +
+                        0.1 * (clip.scene_score or 0.5)
+                    )
+                    result.append({
+                        "clip_id": clip.id,
+                        "composite_score": round(composite, 4),
+                        "duration": clip.duration_sec,
+                    })
+                return result
+            finally:
+                db.close()
+        except Exception as exc:
+            log.warning("[VideoScorerV10] score_all_clips failed for %s: %s", video_id, exc)
+            return []

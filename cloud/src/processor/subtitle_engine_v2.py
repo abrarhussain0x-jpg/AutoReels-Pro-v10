@@ -349,3 +349,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             r, g, b = h[0:2], h[2:4], h[4:6]
             return f"{b}{g}{r}".upper()
         return "00E6FF"  # default yellow
+
+    def generate_captions(self, video_path, output_path=None) -> bool:
+        """
+        Convenience alias for burn_captions().
+        Transcribes video_path and burns captions in-place (or to output_path).
+        Returns True on success.
+        """
+        video_path = Path(video_path)
+        if output_path is None:
+            output_path = video_path.with_suffix(".captioned.mp4")
+        return self.burn_captions(video_path, Path(output_path))
+
+
+# Backward-compatible alias used by older code / Celery tasks.
+SubtitleEngine = SubtitleEngineV2

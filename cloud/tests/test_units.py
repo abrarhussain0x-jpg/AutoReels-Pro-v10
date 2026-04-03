@@ -950,5 +950,65 @@ class TestDedupEngine(unittest.TestCase):
 # Run
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# New methods added in deep-audit fix: score_all_clips & batch_generate_captions
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestVideoScorerV10ScoreAllClips(unittest.TestCase):
+
+    def _make_scorer(self):
+        from src.brain.scorer_v10 import VideoScorerV10
+        cfg = {"niche": "movie", "process_threshold": 0.35, "defer_threshold": 0.20}
+        return VideoScorerV10(cfg)
+
+    def test_score_all_clips_missing_video_returns_empty_list(self):
+        scorer = self._make_scorer()
+        result = scorer.score_all_clips("nonexistent-video-id")
+        self.assertIsInstance(result, list)
+        self.assertEqual(result, [])
+
+    def test_score_all_clips_db_error_returns_empty_list(self):
+        """Simulate DB error (bad URL) — should not raise, returns []."""
+        import os
+        old = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = "sqlite:////nonexistent/path/autoreels.db"
+        try:
+            scorer = self._make_scorer()
+            result = scorer.score_all_clips("any-id")
+            self.assertIsInstance(result, list)
+        finally:
+            if old is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = old
+
+
+class TestContentGeneratorBatchGenerateCaptions(unittest.TestCase):
+
+    def _make_gen(self):
+        from src.brain.content_gen import ContentGenerator
+        return ContentGenerator(api_key="", niche="movie", channel_name="Test")
+
+    def test_batch_generate_captions_empty_list(self):
+        gen = self._make_gen()
+        result = gen.batch_generate_captions([])
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    def test_batch_generate_captions_returns_one_per_clip(self):
+        gen = self._make_gen()
+        clip_ids = ["clip-001", "clip-002", "clip-003"]
+        result = gen.batch_generate_captions(clip_ids)
+        self.assertEqual(len(result), 3)
+
+    def test_batch_generate_captions_uses_fallback_without_key(self):
+        from src.brain.content_gen import GeneratedContent
+        gen = self._make_gen()
+        result = gen.batch_generate_captions(["clip-x"])
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], GeneratedContent)
+        self.assertTrue(result[0].from_fallback)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

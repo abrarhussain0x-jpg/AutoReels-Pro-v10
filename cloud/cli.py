@@ -163,20 +163,53 @@ def serve(port):
 @cli.command()
 def validate():
     """Validate environment and dependencies."""
+    import shutil
+    import os
+    import subprocess
+
+    def _check_tool(name: str) -> bool:
+        return shutil.which(name) is not None
+
+    def _check_ffmpeg() -> bool:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-version"], capture_output=True, timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _check_ytdlp() -> bool:
+        try:
+            result = subprocess.run(
+                ["yt-dlp", "--version"], capture_output=True, timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            # Fall back to python -m yt_dlp
+            try:
+                import yt_dlp  # noqa: F401
+                return True
+            except ImportError:
+                return False
+
     checks = {
-        "Python": sys.version_info >= (3, 8),
-        "FFmpeg": False,  # Would check in real implementation
-        "yt-dlp": False,  # Would check in real implementation
-        "Anthropic API": False,  # Would check in real implementation
-        "Facebook API": False,  # Would check in real implementation
+        "Python >= 3.8": sys.version_info >= (3, 8),
+        "FFmpeg":        _check_ffmpeg(),
+        "yt-dlp":        _check_ytdlp(),
+        "Anthropic API key": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "Facebook API token": bool(
+            os.getenv("FB_ACCESS_TOKEN") or os.getenv("FACEBOOK_ACCESS_TOKEN")
+        ),
     }
-    
+
     AutoReelsCLI.print_status("Environment Validation", checks)
-    
+
     if all(checks.values()):
         print("\n✓ All checks passed!")
     else:
-        print("\n✗ Some checks failed. Please review.")
+        failed = [k for k, v in checks.items() if not v]
+        print(f"\n✗ {len(failed)} check(s) failed: {', '.join(failed)}")
         sys.exit(1)
 
 

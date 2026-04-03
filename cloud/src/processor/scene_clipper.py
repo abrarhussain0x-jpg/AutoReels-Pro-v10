@@ -87,6 +87,19 @@ class SceneClipper:
         log.info("[SceneClipper] init threshold=%.2f vad=%s clip_len=%ds",
                  scene_threshold, vad_model, clip_length_s)
 
+    def detect_scenes(self, video_path) -> List[float]:
+        """
+        Public convenience method: detect scene-change timestamps in video_path.
+        Returns a list of timestamp floats (seconds).
+        """
+        video_path = Path(video_path)
+        total_dur = self._probe_duration(video_path)
+        if total_dur <= 0:
+            return []
+        skip_start = total_dur * self.skip_start_pct
+        skip_end = total_dur * (1.0 - self.skip_end_pct)
+        return self._detect_scenes(video_path, skip_start, skip_end)
+
     def plan_clips(self, video_path: Path, n_clips: int) -> ClipPlan:
         """
         Analyse a video and return a ClipPlan with the best n_clips scenes.
